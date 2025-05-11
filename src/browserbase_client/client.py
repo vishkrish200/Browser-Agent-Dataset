@@ -1,9 +1,12 @@
 import httpx
+import logging
 from typing import List, Dict, Any, Optional
 
 from .auth import ApiKeyAuth, AuthStrategy
 from .exceptions import BrowserbaseAPIError
 from .types import CreateSessionKwargs # Import the new type
+
+logger = logging.getLogger(__name__)
 
 class BrowserbaseClient:
     """Client for interacting with the Browserbase API."""
@@ -20,6 +23,7 @@ class BrowserbaseClient:
         
         self.auth_strategy: AuthStrategy = ApiKeyAuth(api_key)
         self.base_url = base_url
+        logger.info(f"BrowserbaseClient initialized for base URL: {self.base_url}")
         # It's good practice to manage the client lifecycle, 
         # e.g. by using it as a context manager or explicitly closing it.
         # For simplicity here, we'll create it as needed, but a persistent client is often better.
@@ -36,20 +40,41 @@ class BrowserbaseClient:
         url = f"{self.base_url}{endpoint}"
         headers = self._get_headers()
         
+        # Prepare log data (payload might be in 'json' or 'data' kwargs)
+        payload_to_log = kwargs.get('json', kwargs.get('data'))
+        # Basic redaction for now, assuming payload is a dict. Can be expanded.
+        # We are not redacting project_id as it's generally not secret.
+        # If other sensitive keys appear in **kwargs for create_session, they would need redaction.
+        # For now, Browserbase session creation doesn't seem to take highly sensitive data in payload beyond project_id.
+        
+        logger.debug(f"Request: {method} {url} Payload: {payload_to_log}")
+
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.request(method, url, headers=headers, **kwargs)
-                response.raise_for_status() # Raises HTTPStatusError for 4xx/5xx responses
+                # Log response before raising for status, so we capture error responses too
+                response_summary = response.text[:500] + '...' if response.text and len(response.text) > 500 else response.text
+                logger.debug(f"Response: {response.status_code} {response_summary}")
+                response.raise_for_status()
                 if response.status_code == 204: # No content
                     return None
                 return response.json()
             except httpx.HTTPStatusError as e:
+                # Already logged response text above, here we log the error context specifically
+                logger.error(
+                    f"API request failed: {e.request.method} {e.request.url} - Status: {e.response.status_code}",
+                    exc_info=True # Add exception info to log
+                )
                 raise BrowserbaseAPIError(
                     message=f"API request failed: {e.request.method} {e.request.url}", 
                     status_code=e.response.status_code,
                     response_content=e.response.text
                 ) from e
             except httpx.RequestError as e:
+                logger.error(
+                    f"Request failed: {e.request.method} {e.request.url} - Error: {str(e)}",
+                    exc_info=True # Add exception info to log
+                )
                 raise BrowserbaseAPIError(f"Request failed: {e.request.method} {e.request.url}") from e
 
     async def create_session(self, project_id: str, **kwargs: Any) -> Dict[str, Any]: # Using Any for kwargs for now
