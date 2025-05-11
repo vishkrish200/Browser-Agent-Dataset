@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 
 from .auth import ApiKeyAuth, AuthStrategy
 from .exceptions import BrowserbaseAPIError
+from .types import CreateSessionKwargs # Import the new type
 
 class BrowserbaseClient:
     """Client for interacting with the Browserbase API."""
@@ -51,8 +52,41 @@ class BrowserbaseClient:
             except httpx.RequestError as e:
                 raise BrowserbaseAPIError(f"Request failed: {e.request.method} {e.request.url}") from e
 
-    async def create_session(self, project_id: str, **kwargs) -> Dict[str, Any]:
-        """Creates a new Browserbase session."""
+    async def create_session(self, project_id: str, **kwargs: Any) -> Dict[str, Any]: # Using Any for kwargs for now
+        """Creates a new Browserbase session.
+
+        Args:
+            project_id: The Project ID. Can be found in Browserbase Settings.
+            **kwargs: Additional parameters for session creation. 
+                      These are passed directly to the Browserbase API.
+                      Refer to `src.browserbase_client.types.CreateSessionKwargs` for the expected structure
+                      and the official Browserbase API documentation for /v1/sessions (POST).
+                      Key options include:
+                      - `extensionId` (str): Uploaded Extension ID.
+                      - `browserSettings` (BrowserSettingsDict): Detailed browser configurations.
+                          - `context` (BrowserContextDict): Context ID and persistence.
+                          - `fingerprint` (FingerprintDict): HTTP version, browser types, devices, locales, OS, screen.
+                          - `viewport` (ViewportDict): Width and height.
+                          - `blockAds` (bool): Enable/disable ad blocking.
+                          - `solveCaptchas` (bool): Enable/disable captcha solving.
+                          - `recordSession` (bool): Enable/disable session recording.
+                          - `logSession` (bool): Enable/disable session logging.
+                          - `advancedStealth` (bool): Enable/disable advanced stealth mode.
+                      - `timeout` (int): Duration in seconds after which the session will automatically end.
+                      - `keepAlive` (bool): Keep session alive after disconnections (Startup plan only).
+                      - `proxies` (Union[bool, List[CustomProxyConfigDict]]): True for default, or list of custom proxies.
+                      - `region` (Literal['us-west-2', ...]): Region for the session.
+                      - `userMetadata` (Dict[str, Any]): Arbitrary user metadata.
+
+        Returns:
+            A dictionary containing the API response for the created session.
+
+        Raises:
+            BrowserbaseAPIError: If the API request fails.
+            ValueError: If `project_id` is invalid.
+        """
+        if not project_id or not isinstance(project_id, str):
+            raise ValueError("Project ID must be a non-empty string.")
         payload = {"projectId": project_id, **kwargs}
         return await self._request("POST", "/sessions", json=payload)
 
@@ -69,8 +103,10 @@ class BrowserbaseClient:
         """Retrieves details for a specific Browserbase session."""
         return await self._request("GET", f"/sessions/{session_id}")
 
-    async def release_session(self, session_id: str, project_id: str) -> Dict[str, Any]:
+    async def release_session(self, session_id: str, project_id: str) -> Optional[Dict[str, Any]]: # Endpoint might return 204
         """Requests the release of a specific Browserbase session."""
+        if not project_id or not isinstance(project_id, str):
+            raise ValueError("Project ID must be a non-empty string for releasing a session.")
         payload = {"projectId": project_id, "status": "REQUEST_RELEASE"}
         return await self._request("POST", f"/sessions/{session_id}", json=payload)
 
