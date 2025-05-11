@@ -90,6 +90,16 @@ class StagehandClient:
             # raise StagehandAPIError(f"Network error: {str(e)}") from e
             raise # For now, re-raise
 
+    async def create_task(self, workflow_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Creates a new task/workflow in Stagehand.
+        The actual endpoint and response structure are based on common API patterns
+        and the example in the parent task, and may need adjustment.
+        """
+        # Assuming the API endpoint for creating tasks is /tasks or /workflows
+        # The example from Task 3 details used client.create_task(workflow)
+        return await self._request("POST", "/tasks", json=workflow_data)
+
     # Example API method (to be defined in later subtasks)
-    # async def create_workflow(self, workflow_definition: dict) -> dict:
-    #     return await self._request("POST", "/workflows", json=workflow_definition)
+    # async def execute_task(self, task_id: str, browser_session_id: str) -> dict:
+    #     return await self._request("POST", f"/tasks/{task_id}/execute", json={"browserSessionId": browser_session_id})
