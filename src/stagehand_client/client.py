@@ -100,6 +100,17 @@ class StagehandClient:
         # The example from Task 3 details used client.create_task(workflow)
         return await self._request("POST", "/tasks", json=workflow_data)
 
+    async def execute_task(self, task_id: str, browser_session_id: str) -> Dict[str, Any]:
+        """
+        Executes a previously created Stagehand task within a specific Browserbase session.
+        The actual endpoint, payload, and response structure are based on common API patterns
+        and the example in the parent task, and may need adjustment.
+        """
+        # Assuming the API endpoint for executing tasks is POST /tasks/{task_id}/execute
+        # And the payload needs the browserbase_session_id
+        payload = {"browserSessionId": browser_session_id}
+        return await self._request("POST", f"/tasks/{task_id}/execute", json=payload)
+
     # Example API method (to be defined in later subtasks)
-    # async def execute_task(self, task_id: str, browser_session_id: str) -> dict:
-    #     return await self._request("POST", f"/tasks/{task_id}/execute", json={"browserSessionId": browser_session_id})
+    # async def get_task_status(self, task_id: str) -> dict:
+    #     return await self._request("GET", f"/tasks/{task_id}/status")
