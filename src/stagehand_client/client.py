@@ -4,7 +4,7 @@ import logging
 
 from . import config
 from .auth import AuthStrategy, ApiKeyAuth
-# from .exceptions import StagehandAPIError # To be defined later
+from .exceptions import StagehandError, StagehandAPIError, StagehandConfigError
 # from .types import SomeStagehandType # To be defined later
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,8 @@ class StagehandClient:
         else:
             resolved_api_key = config.get_api_key(api_key_override=api_key)
             if not resolved_api_key:
-                raise ValueError(
+                # Use StagehandConfigError for configuration issues
+                raise StagehandConfigError(
                     "Stagehand API key not provided and not found in environment variable "
                     f"{config.STAGEHAND_API_KEY_ENV_VAR}. "
                     "Alternatively, provide an auth_strategy instance."
@@ -68,27 +69,31 @@ class StagehandClient:
     async def _request(
         self, method: str, endpoint: str, **kwargs: Any
     ) -> Dict[str, Any]: # Assuming JSON response for now
-        logger.debug(f"Request: {method} {self.base_url}{endpoint} Payload: {kwargs.get('json')}")
+        request_url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
+        logger.debug(f"Request: {method} {request_url} Payload: {kwargs.get('json')}")
         try:
             response = await self.http_client.request(method, endpoint, **kwargs)
             response.raise_for_status() # Raise HTTPStatusError for 4xx/5xx responses
             logger.debug(f"Response: {response.status_code} {response.text}")
-            return response.json() # Or response.text, response.content based on API
+            return response.json()
         except httpx.HTTPStatusError as e:
             logger.error(
-                f"API request failed: {method} {self.base_url}{endpoint} - Status: {e.response.status_code}",
+                f"API request failed: {method} {request_url} - Status: {e.response.status_code} - Response: {e.response.text}",
                 exc_info=True
             )
-            # Re-raise as a custom StagehandAPIError later, e.g.:
-            # raise StagehandAPIError(str(e), status_code=e.response.status_code, response_content=e.response.text) from e
-            raise # For now, re-raise the original httpx error
-        except httpx.RequestError as e:
+            raise StagehandAPIError(
+                message=f"API call to {e.request.method} {e.request.url} failed with status {e.response.status_code}",
+                status_code=e.response.status_code,
+                response_content=e.response.text
+            ) from e
+        except httpx.RequestError as e: # Covers network errors, timeouts, etc.
             logger.error(
-                f"Network request failed: {method} {self.base_url}{endpoint}", exc_info=True
+                f"Network request failed: {method} {request_url} - Error: {str(e)}", exc_info=True
             )
-            # Re-raise as a custom StagehandAPIError later
-            # raise StagehandAPIError(f"Network error: {str(e)}") from e
-            raise # For now, re-raise
+            raise StagehandAPIError(f"Network error during request to {request_url}: {str(e)}") from e
+        except Exception as e: # Catch any other unexpected errors
+            logger.error(f"An unexpected error occurred during request to {request_url}: {str(e)}", exc_info=True)
+            raise StagehandError(f"An unexpected error occurred: {str(e)}") from e
 
     async def create_task(self, workflow_data: Dict[str, Any]) -> Dict[str, Any]:
         """
