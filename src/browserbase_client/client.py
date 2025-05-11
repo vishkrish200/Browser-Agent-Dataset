@@ -1,32 +1,55 @@
 import httpx
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 
 from .auth import ApiKeyAuth, AuthStrategy
 from .exceptions import BrowserbaseAPIError
-from .types import CreateSessionKwargs # Import the new type
+from .types import CreateSessionKwargs
+from . import config
 
 logger = logging.getLogger(__name__)
 
 class BrowserbaseClient:
     """Client for interacting with the Browserbase API."""
-    def __init__(self, api_key: str, base_url: str = "https://api.browserbase.com/v1"):
+    def __init__(
+        self, 
+        api_key: Optional[str] = None, 
+        base_url: Optional[str] = None, 
+        timeout_seconds: Optional[Union[float, int]] = None
+    ):
         """
         Initialize the BrowserbaseClient.
 
+        Configuration is resolved in the following order of precedence:
+        1. Direct parameters passed to the constructor.
+        2. Environment variables (e.g., BROWSERBASE_API_KEY).
+        3. Default values defined in the library.
+
         Args:
-            api_key: Your Browserbase API key.
-            base_url: The base URL for the Browserbase API. Defaults to v1.
+            api_key: Your Browserbase API key. If None, attempts to load from
+                     env var BROWSERBASE_API_KEY.
+            base_url: The base URL for the Browserbase API. If None, attempts to load from
+                      env var BROWSERBASE_BASE_URL, then uses default.
+            timeout_seconds: Default timeout in seconds for HTTP requests. If None,
+                             attempts to load from env var BROWSERBASE_DEFAULT_TIMEOUT_SECONDS,
+                             then uses default.
+        Raises:
+            ValueError: If API key is not provided and cannot be found in environment variables.
         """
-        if not api_key or not isinstance(api_key, str):
-            raise ValueError("API key must be a non-empty string.")
+        resolved_api_key = config.get_api_key(api_key_override=api_key)
+        if not resolved_api_key:
+            raise ValueError(
+                "Browserbase API key not provided and not found in environment variable "
+                f"{config.BROWSERBASE_API_KEY_ENV_VAR}."
+            )
         
-        self.auth_strategy: AuthStrategy = ApiKeyAuth(api_key)
-        self.base_url = base_url
-        logger.info(f"BrowserbaseClient initialized for base URL: {self.base_url}")
-        # It's good practice to manage the client lifecycle, 
-        # e.g. by using it as a context manager or explicitly closing it.
-        # For simplicity here, we'll create it as needed, but a persistent client is often better.
+        self.auth_strategy: AuthStrategy = ApiKeyAuth(resolved_api_key)
+        self.base_url = config.get_base_url(base_url_override=base_url)
+        self.timeout_seconds = config.get_default_timeout_seconds(timeout_override=timeout_seconds)
+        
+        logger.info(
+            f"BrowserbaseClient initialized. Base URL: {self.base_url}, Timeout: {self.timeout_seconds}s"
+        )
 
     def _get_headers(self) -> Dict[str, str]:
         """Internal method to get all necessary headers for a request."""
@@ -49,7 +72,7 @@ class BrowserbaseClient:
         
         logger.debug(f"Request: {method} {url} Payload: {payload_to_log}")
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             try:
                 response = await client.request(method, url, headers=headers, **kwargs)
                 # Log response before raising for status, so we capture error responses too

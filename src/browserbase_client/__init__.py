@@ -10,6 +10,13 @@ from .types import (
     CustomProxyConfigDict,
     CreateSessionKwargs
 )
+from .config import (
+    DEFAULT_BASE_URL,
+    DEFAULT_TIMEOUT_SECONDS,
+    BROWSERBASE_API_KEY_ENV_VAR,
+    BROWSERBASE_BASE_URL_ENV_VAR,
+    BROWSERBASE_DEFAULT_TIMEOUT_SECONDS_ENV_VAR
+)
 
 __all__ = [
     "BrowserbaseClient",
@@ -23,5 +30,11 @@ __all__ = [
     "BrowserContextDict",
     "BrowserSettingsDict",
     "CustomProxyConfigDict",
-    "CreateSessionKwargs"
+    "CreateSessionKwargs",
+    # Exported config constants
+    "DEFAULT_BASE_URL",
+    "DEFAULT_TIMEOUT_SECONDS",
+    "BROWSERBASE_API_KEY_ENV_VAR",
+    "BROWSERBASE_BASE_URL_ENV_VAR",
+    "BROWSERBASE_DEFAULT_TIMEOUT_SECONDS_ENV_VAR"
 ]
