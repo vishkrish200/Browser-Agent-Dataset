@@ -73,6 +73,17 @@ class WorkflowBuilder:
             raise ValueError("Attribute name for get_attribute action must be a non-empty string.")
         return self._add_step(WorkflowStep(action="get_attribute", selector=selector, attribute_name=attribute_name))
 
+    def add_custom_step(self, step_data: WorkflowStep) -> 'WorkflowBuilder':
+        """Adds a pre-formed WorkflowStep dictionary to the workflow."""
+        if not isinstance(step_data, dict):
+            raise ValueError("Custom step_data must be a dictionary.")
+        if "action" not in step_data or not step_data["action"]:
+            raise ValueError("Custom step_data must contain a non-empty 'action' key.")
+        # Further validation could be done here against WorkflowAction Literal and WorkflowStep TypedDict keys
+        # For now, we trust the structure if it passes basic checks.
+        self._steps.append(step_data) # Appending directly as step_data is expected to be WorkflowStep
+        return self
+
     def build(self) -> Dict[str, Any]:
         """
         Builds the workflow definition dictionary.
