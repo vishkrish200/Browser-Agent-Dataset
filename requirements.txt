@@ -1,1 +1,7 @@
-httpx>=0.20.0 
+httpx>=0.20.0
+
+# Testing
+pytest
+pytest-asyncio
+respx
+pytest-cov

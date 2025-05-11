@@ -1,0 +1,19 @@
+Metadata-Version: 2.4
+Name: browserbase_client
+Version: 0.1.0
+Summary: A client for the Browserbase API.
+Author-email: Your Name <you@example.com>
+Project-URL: Homepage, https://github.com/yourusername/browser-agent-dataset
+Project-URL: Bug Tracker, https://github.com/yourusername/browser-agent-dataset/issues
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: httpx>=0.20.0
+
+# Browser-Agent Dataset MVP
+
+This project aims to build an open, production-ready orchestration layer to record real browser interactions and package them as a clean, portable dataset for fine-tuning large language models (LLMs) into web-capable agents.
+
+*Further details will be added here.* 

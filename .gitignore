@@ -26,4 +26,13 @@ node_modules/
 
 # Task files
 tasks.json
-tasks/ 
+tasks/
+
+# Virtual environment
+.venv/
+
+# Coverage report
+.coverage
+
+# Python packaging artifacts
+*.egg-info/ 

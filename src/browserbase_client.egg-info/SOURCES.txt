@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+src/browserbase_client/__init__.py
+src/browserbase_client/auth.py
+src/browserbase_client/client.py
+src/browserbase_client/config.py
+src/browserbase_client/exceptions.py
+src/browserbase_client/session.py
+src/browserbase_client/types.py
+src/browserbase_client/utils.py
+src/browserbase_client.egg-info/PKG-INFO
+src/browserbase_client.egg-info/SOURCES.txt
+src/browserbase_client.egg-info/dependency_links.txt
+src/browserbase_client.egg-info/requires.txt
+src/browserbase_client.egg-info/top_level.txt

@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "browserbase_client"
+version = "0.1.0"
+authors = [
+  { name="Your Name", email="you@example.com" },
+]
+description = "A client for the Browserbase API."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License", # Or your chosen license
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "httpx>=0.20.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/yourusername/browser-agent-dataset" # Replace with actual URL
+"Bug Tracker" = "https://github.com/yourusername/browser-agent-dataset/issues" # Replace
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+python_files = "test_*.py tests_*.py example_*.py"
+asyncio_mode = "auto" # Or strict
+
+[tool.coverage.run]
+source = ["browserbase_client"]
+branch = true
+
+[tool.coverage.report]
+#fail_under = 80 # Optional: fail if coverage is below a certain percentage
+show_missing = true
+skip_covered = true 

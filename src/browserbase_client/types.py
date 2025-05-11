@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Literal, Union
+from typing import List, Dict, Any, Literal, Union, TypedDict
 
 # For Python versions < 3.11, Unpack is in typing_extensions
 # from typing_extensions import Unpack
@@ -8,17 +8,17 @@ from typing import List, Dict, Any, Literal, Union
 # Using total=False for all TypedDicts to indicate all keys are optional,
 # as per typical API request body patterns where not all fields are required.
 
-class ViewportDict(Dict, total=False):
+class ViewportDict(TypedDict, total=False):
     width: int
     height: int
 
-class ScreenDict(Dict, total=False):
+class ScreenDict(TypedDict, total=False):
     maxWidth: int
     maxHeight: int
     minWidth: int
     minHeight: int
 
-class FingerprintDict(Dict, total=False):
+class FingerprintDict(TypedDict, total=False):
     httpVersion: Literal['1', '2']
     browsers: List[Literal['chrome', 'edge', 'firefox', 'safari']]
     devices: List[Literal['desktop', 'mobile']]
@@ -26,11 +26,11 @@ class FingerprintDict(Dict, total=False):
     operatingSystems: List[Literal['android', 'ios', 'linux', 'macos', 'windows']]
     screen: ScreenDict
 
-class BrowserContextDict(Dict, total=False):
+class BrowserContextDict(TypedDict, total=False):
     id: str
     persist: bool
 
-class BrowserSettingsDict(Dict, total=False):
+class BrowserSettingsDict(TypedDict, total=False):
     context: BrowserContextDict
     extensionId: str # Also a top-level CreateSessionKwargs param
     fingerprint: FingerprintDict
@@ -43,7 +43,7 @@ class BrowserSettingsDict(Dict, total=False):
 
 # Placeholder for detailed custom proxy configurations if available from Browserbase docs later
 # For now, can be a generic dict or a more specific common structure if known.
-class CustomProxyConfigDict(Dict, total=False):
+class CustomProxyConfigDict(TypedDict, total=False):
     # Example fields if known, e.g.:
     # server: str
     # port: int
@@ -53,7 +53,7 @@ class CustomProxyConfigDict(Dict, total=False):
     pass # Keep as a generic dict for now if structure is unknown
 
 # Top-level keyword arguments for the create_session API call
-class CreateSessionKwargs(Dict, total=False):
+class CreateSessionKwargs(TypedDict, total=False):
     # projectId is a direct parameter to create_session, not in kwargs
     extensionId: str # Can also be under browserSettings.extensionId as per some API designs
     browserSettings: BrowserSettingsDict
