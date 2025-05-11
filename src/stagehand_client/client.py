@@ -111,6 +111,15 @@ class StagehandClient:
         payload = {"browserSessionId": browser_session_id}
         return await self._request("POST", f"/tasks/{task_id}/execute", json=payload)
 
+    async def get_task_logs(self, task_id: str) -> Dict[str, Any]:
+        """
+        Retrieves execution logs for a specific Stagehand task.
+        The actual endpoint and response structure are based on common API patterns
+        and may need adjustment based on the Stagehand API.
+        """
+        # Assuming the API endpoint for fetching logs is GET /tasks/{task_id}/logs
+        return await self._request("GET", f"/tasks/{task_id}/logs")
+
     # Example API method (to be defined in later subtasks)
     # async def get_task_status(self, task_id: str) -> dict:
     #     return await self._request("GET", f"/tasks/{task_id}/status")
