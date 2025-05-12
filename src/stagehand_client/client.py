@@ -70,7 +70,12 @@ class StagehandClient:
         self, method: str, endpoint: str, **kwargs: Any
     ) -> Dict[str, Any]: # Assuming JSON response for now
         request_url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
-        logger.debug(f"Request: {method} {request_url} Payload: {kwargs.get('json')}")
+        logger.debug(f"Request: {method} {request_url} Payload: {kwargs.get('json') or kwargs.get('data')}")
+
+        # TEMPORARY DEBUGGING
+        print(f"[DEBUG] httpx request: method='{method}', endpoint='{endpoint}'")
+        print(f"[DEBUG] http_client base_url='{self.http_client.base_url}'")
+
         try:
             response = await self.http_client.request(method, endpoint, **kwargs)
             response.raise_for_status() # Raise HTTPStatusError for 4xx/5xx responses
