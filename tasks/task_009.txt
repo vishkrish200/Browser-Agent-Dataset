@@ -1,6 +1,6 @@
 # Task ID: 9
 # Title: Implement CLI Interface
-# Status: pending
+# Status: done
 # Dependencies: 4, 5, 6, 7
 # Priority: medium
 # Description: Create a command-line interface for running data collection, processing, and dataset building tasks.
