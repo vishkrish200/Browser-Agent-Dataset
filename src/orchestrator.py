@@ -12,15 +12,25 @@ from browserbase_client import BrowserbaseClient, BrowserbaseAPIError
 from stagehand_client import StagehandClient, StagehandAPIError, StagehandConfigError, WorkflowBuilder
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Basic config is set here, can be overridden by applications importing this module
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(name)s - %(levelname)s - Action: %(action)s - %(message)s',
+    datefmt='%Y-%m-%dT%H:%M:%S%z' 
+)
+# Create a logger instance for this module.
+# For structured logging, we'll often pass `extra` to logger calls.
 logger = logging.getLogger(__name__)
+
+# Default extra values for logs, can be overridden in logger calls
+DEFAULT_LOG_EXTRA = {"action": "unknown"}
 
 app = FastAPI()
 
 @app.get("/health")
 async def health_check():
     """Basic health check endpoint."""
-    logger.info("Health check endpoint called.")
+    logger.info("Health check endpoint called.", extra={"action": "health_check_invoked"})
     return {"status": "healthy"}
 
 # --- Custom Exceptions (Moved to Orchestrator scope) ---
@@ -56,306 +66,412 @@ class Orchestrator:
         """Error during Stagehand task execution."""
         pass
 
-    def __init__(self, config=None):
-        """Initialize the Orchestrator."""
+    def __init__(self, config: Optional[Dict] = None, browserbase_client: Optional[BrowserbaseClient] = None, stagehand_client: Optional[StagehandClient] = None):
+        """
+        Initialize the Orchestrator.
+        Accepts optional pre-configured client instances for better testability and flexibility.
+        """
         self.config = config or {}
-        logger.info("Orchestrator initialized.")
+        log_extra = {**DEFAULT_LOG_EXTRA, "action": "orchestrator_init"}
+        
+        if browserbase_client:
+            self.browserbase_client = browserbase_client
+            logger.info("Orchestrator initialized with pre-configured BrowserbaseClient.", extra=log_extra)
+        else:
+            # Attempt to get API key from config or fall back to client's default (env var)
+            bb_api_key = self.config.get("browserbase_api_key")
+            self.browserbase_client = BrowserbaseClient(api_key=bb_api_key)
+            logger.info(f"Orchestrator initialized. BrowserbaseClient created. API key source: {'config' if bb_api_key else 'env/default'}.", extra=log_extra)
+
+        if stagehand_client:
+            self.stagehand_client = stagehand_client
+            logger.info("Orchestrator initialized with pre-configured StagehandClient.", extra=log_extra)
+        else:
+            sh_api_key = self.config.get("stagehand_api_key")
+            self.stagehand_client = StagehandClient(api_key=sh_api_key) # Assuming StagehandClient takes api_key
+            logger.info(f"Orchestrator initialized. StagehandClient created. API key source: {'config' if sh_api_key else 'env/default'}.", extra=log_extra)
+
+        self._active_sessions: Dict[str, Session] = {}
+        self._session_lock = Lock()
+        logger.info("Orchestrator fully initialized.", extra=log_extra)
+
 
     async def close(self):
         """Closes underlying clients gracefully."""
-        logger.info("Closing Orchestrator clients...")
-        await self.browserbase_client.close()
-        await self.stagehand_client.close()
-        logger.info("Orchestrator clients closed.")
+        log_extra = {**DEFAULT_LOG_EXTRA, "action": "orchestrator_close"}
+        logger.info("Closing Orchestrator clients...", extra=log_extra)
+        try:
+            if hasattr(self.browserbase_client, 'close') and asyncio.iscoroutinefunction(self.browserbase_client.close):
+                await self.browserbase_client.close()
+            logger.info("BrowserbaseClient closed (if applicable).", extra=log_extra)
+        except Exception as e:
+            logger.exception("Error closing BrowserbaseClient.", extra={**log_extra, "error": str(e)})
+        
+        try:
+            if hasattr(self.stagehand_client, 'close') and asyncio.iscoroutinefunction(self.stagehand_client.close):
+                 await self.stagehand_client.close()
+            logger.info("StagehandClient closed (if applicable).", extra=log_extra)
+        except Exception as e:
+            logger.exception("Error closing StagehandClient.", extra={**log_extra, "error": str(e)})
+        
+        logger.info("Orchestrator clients closed procedure completed.", extra=log_extra)
 
     # --- Session Management Methods ---
 
-    async def _create_browserbase_session(self, config: Optional[Dict] = None) -> str:
-        """Creates a new Browserbase session and tracks it."""
-        config = config or {}
-        logger.info(f"Attempting to create Browserbase session with config: {config}")
-        try:
-            response = await self.browserbase_client.create_session(**config)
-            session_id = response.get("sessionId") # Assuming response format
-            if not session_id:
-                 logger.error(f"Browserbase create_session response missing 'sessionId': {response}")
-                 raise ValueError("Failed to extract sessionId from Browserbase response")
+    async def _create_browserbase_session(self, project_id: Optional[str] = None, session_params: Optional[Dict] = None) -> str:
+        """
+        Creates a new Browserbase session and tracks it.
+        Args:
+            project_id: The project ID for Browserbase. Defaults to config or None.
+            session_params: Additional parameters for session creation.
+        """
+        session_params = session_params or {}
+        # Prefer project_id from argument, then config, then client's internal default if any
+        final_project_id = project_id or self.config.get("browserbase_project_id")
+        
+        log_extra = {
+            **DEFAULT_LOG_EXTRA, 
+            "action": "create_browserbase_session", 
+            "project_id": final_project_id,
+            "session_params": session_params
+        }
+        logger.info(f"Attempting to create Browserbase session.", extra=log_extra)
+        
+        if not final_project_id:
+            logger.error("Cannot create Browserbase session: project_id is missing.", extra=log_extra)
+            raise self.SessionCreationError("Browserbase project_id is required to create a session.")
 
-            logger.info(f"Browserbase session created successfully: {session_id}")
+        try:
+            # Pass project_id directly to create_session if it expects it, or include in session_params
+            # Based on browserbase_client.py, it expects project_id as first arg, then **kwargs
+            response = await self.browserbase_client.create_session(project_id=final_project_id, **session_params)
+            session_id = response.get("sessionId")
+            
+            if not session_id:
+                 logger.error(f"Browserbase create_session response missing 'sessionId'. Response: {response}", extra=log_extra)
+                 raise self.SessionCreationError(f"Failed to extract sessionId from Browserbase response: {response}")
+
             new_session = Session(browserbase_id=session_id, state="idle")
             with self._session_lock:
                 self._active_sessions[session_id] = new_session
+            logger.info(f"Browserbase session created successfully.", extra={**log_extra, "session_id": session_id, "status": "success"})
             return session_id
         except BrowserbaseAPIError as e:
-            logger.error(f"Failed to create Browserbase session: {e}")
-            # Decide how to handle: raise specific Orchestrator error? Return None?
-            raise # Re-raise for now
+            logger.error(f"Failed to create Browserbase session due to API error.", exc_info=True, extra={**log_extra, "error": str(e), "status_code": e.status_code, "status": "failed_api_error"})
+            raise self.SessionCreationError(f"API error creating Browserbase session: {e}") from e
         except Exception as e:
-            logger.exception(f"Unexpected error creating Browserbase session: {e}")
-            raise # Re-raise unexpected errors
+            logger.exception(f"Unexpected error creating Browserbase session.", extra={**log_extra, "error": str(e), "status": "failed_unexpected_error"})
+            raise self.SessionCreationError(f"Unexpected error creating Browserbase session: {e}") from e
 
-    async def _release_browserbase_session(self, session_id: str) -> bool:
-        """Releases a Browserbase session and removes it from tracking."""
-        logger.info(f"Attempting to release Browserbase session: {session_id}")
-        if session_id not in self._active_sessions:
-             logger.warning(f"Attempted to release untracked session: {session_id}")
-             # Optionally try to release anyway if it might exist in Browserbase
-             # return False # Or raise error?
+    async def _release_browserbase_session(self, session_id: str, project_id: Optional[str] = None) -> bool:
+        """
+        Releases a Browserbase session and removes it from tracking.
+        Args:
+            session_id: The ID of the session to release.
+            project_id: The project ID for Browserbase. Defaults to config or None.
+        """
+        final_project_id = project_id or self.config.get("browserbase_project_id")
+        log_extra = {
+            **DEFAULT_LOG_EXTRA,
+            "action": "release_browserbase_session", 
+            "session_id": session_id,
+            "project_id": final_project_id
+        }
+
+        if not final_project_id:
+            logger.error("Cannot release Browserbase session: project_id is missing.", extra=log_extra)
+            # Don't raise if we're trying to clean up, but log error.
+            # If session is tracked, mark as error locally.
+            with self._session_lock:
+                if session_id in self._active_sessions:
+                    self._active_sessions[session_id].state = "error_release_failed_no_project_id"
+            return False
+
+        logger.info(f"Attempting to release Browserbase session.", extra=log_extra)
+        
+        session_exists_locally = False
+        with self._session_lock:
+            if session_id in self._active_sessions:
+                session_exists_locally = True
+            else:
+                logger.warning(f"Attempted to release untracked or already removed session.", extra=log_extra)
+                # Proceed with release attempt as it might exist in Browserbase
 
         try:
-            await self.browserbase_client.release_session(session_id)
-            logger.info(f"Browserbase session released successfully: {session_id}")
+            # Assuming release_session needs project_id.
+            await self.browserbase_client.release_session(session_id=session_id, project_id=final_project_id)
+            logger.info(f"Browserbase session released successfully via API.", extra={**log_extra, "status": "success_api"})
+            
             with self._session_lock:
                 if session_id in self._active_sessions:
                     del self._active_sessions[session_id]
+                    logger.info(f"Session removed from active tracking.", extra={**log_extra, "status": "success_local_removed"})
             return True
         except BrowserbaseAPIError as e:
-            logger.error(f"Failed to release Browserbase session {session_id}: {e}")
-            # Maybe remove from tracking anyway if release failed?
+            logger.error(f"Failed to release Browserbase session due to API error.", exc_info=True, extra={**log_extra, "error": str(e), "status_code": e.status_code, "status": "failed_api_error"})
             with self._session_lock:
                 if session_id in self._active_sessions:
-                    # Mark as error or remove? Mark as error for potential retry/cleanup.
-                    self._active_sessions[session_id].state = "error"
-                    logger.warning(f"Marked session {session_id} as error due to release failure.")
+                    self._active_sessions[session_id].state = "error_release_api_failed"
+                    logger.warning(f"Marked session as error due to API release failure.", extra=log_extra)
             return False
         except Exception as e:
-            logger.exception(f"Unexpected error releasing Browserbase session {session_id}: {e}")
-            # Mark as error?
+            logger.exception(f"Unexpected error releasing Browserbase session.", extra={**log_extra, "error": str(e), "status": "failed_unexpected_error"})
             with self._session_lock:
                  if session_id in self._active_sessions:
-                     self._active_sessions[session_id].state = "error"
+                     self._active_sessions[session_id].state = "error_release_unexpected"
+                     logger.warning(f"Marked session as error due to unexpected release failure.", extra=log_extra)
             return False
 
     def get_session_info(self, session_id: str) -> Optional[Session]:
          """Get information about a tracked session."""
+         log_extra = {**DEFAULT_LOG_EXTRA, "action": "get_session_info", "session_id": session_id}
          with self._session_lock:
-             return self._active_sessions.get(session_id)
+             session = self._active_sessions.get(session_id)
+             if session:
+                 logger.debug(f"Session info retrieved.", extra=log_extra)
+             else:
+                 logger.debug(f"Session not found in active tracking.", extra=log_extra)
+             return session
 
     def list_active_sessions(self) -> List[Session]:
         """List all currently tracked active sessions."""
+        log_extra = {**DEFAULT_LOG_EXTRA, "action": "list_active_sessions"}
         with self._session_lock:
-            return list(self._active_sessions.values())
+            sessions = list(self._active_sessions.values())
+            logger.debug(f"Listed {len(sessions)} active sessions.", extra=log_extra)
+            return sessions
 
     # --- Task Execution Methods ---
 
-    async def run_workflow(self, workflow: WorkflowBuilder, num_sessions: int = 1, session_config: Optional[Dict] = None):
+    async def run_workflow(
+        self, 
+        workflow: WorkflowBuilder, 
+        num_sessions: int = 1, 
+        browserbase_project_id: Optional[str] = None,
+        browserbase_session_params: Optional[Dict] = None
+    ):
         """
         Runs a defined Stagehand workflow across one or more Browserbase sessions.
 
         Args:
             workflow: A Stagehand WorkflowBuilder instance defining the interaction.
             num_sessions: The number of parallel Browserbase sessions to use.
-            session_config: Optional configuration for Browserbase session creation.
+            browserbase_project_id: Project ID for Browserbase sessions. Overrides orchestrator config.
+            browserbase_session_params: Optional configuration for Browserbase session creation.
 
         Returns:
             A list of results, one for each session execution attempt. Each result is a dict
             containing 'sessionId', 'stagehandTaskId', 'stagehandExecutionId', 'status', and 'error' (if any).
-
-        Raises:
-            TaskCreationError: If the Stagehand task cannot be created.
-            OrchestratorError: For other orchestration-level issues.
         """
-        logger.info(f"Running workflow '{workflow.workflow_name}' across {num_sessions} sessions.")
-        session_config = session_config or {}
+        workflow_name = workflow.workflow_name if hasattr(workflow, 'workflow_name') else "UnnamedWorkflow"
+        log_extra_base = {
+            **DEFAULT_LOG_EXTRA, 
+            "action": "run_workflow", 
+            "workflow_name": workflow_name,
+            "num_requested_sessions": num_sessions,
+            "browserbase_project_id_arg": browserbase_project_id,
+            "browserbase_session_params": browserbase_session_params
+        }
+        logger.info(f"Attempting to run workflow.", extra=log_extra_base)
+
+        # Determine project_id for Browserbase session creation/release
+        final_bb_project_id = browserbase_project_id or self.config.get("browserbase_project_id")
+        if not final_bb_project_id:
+            logger.critical("Workflow execution failed: Browserbase Project ID not provided or configured.", extra={**log_extra_base, "status": "failed_missing_project_id"})
+            raise self.OrchestratorError("Browserbase Project ID is required for run_workflow.")
+
         stagehand_task_id = None
-        browserbase_sessions_created = [] # Keep track of ALL sessions attempted to be created for release
+        browserbase_sessions_created_ids = [] 
         execution_results = []
-        main_exception = None # Track the primary exception if one occurs
+        main_exception = None
 
         try:
             # 1. Create Stagehand Task
-            logger.info(f"Creating Stagehand task for workflow: {workflow.workflow_name}")
+            log_st_create = {**log_extra_base, "sub_action": "create_stagehand_task"}
+            logger.info(f"Creating Stagehand task.", extra=log_st_create)
             try:
-                task_response = await self.stagehand_client.create_task(workflow.build())
+                task_payload = workflow.build() # Assuming this returns the dict payload for Stagehand
+                task_response = await self.stagehand_client.create_task(task_payload) # Assuming create_task takes dict
                 stagehand_task_id = task_response.get("taskId")
                 if not stagehand_task_id:
-                    # Use the specific Orchestrator exception
+                    logger.error(f"Stagehand create_task response missing 'taskId'. Response: {task_response}", extra=log_st_create)
                     raise self.TaskCreationError(f"Stagehand create_task response missing 'taskId': {task_response}")
-                logger.info(f"Stagehand task created successfully: {stagehand_task_id}")
+                logger.info(f"Stagehand task created successfully.", extra={**log_st_create, "stagehand_task_id": stagehand_task_id, "status": "success"})
             except StagehandAPIError as e:
-                logger.error(f"Failed to create Stagehand task due to API error: {e}")
-                raise self.TaskCreationError(f"Failed to create Stagehand task: {e}") from e
-            except Exception as e:
-                 logger.exception(f"Unexpected error creating Stagehand task: {e}")
-                 # Use the specific Orchestrator exception
+                logger.error(f"Failed to create Stagehand task due to API error.", exc_info=True, extra={**log_st_create, "error": str(e), "status_code": e.status_code, "status": "failed_api_error"})
+                raise self.TaskCreationError(f"API error creating Stagehand task: {e}") from e
+            except Exception as e: # Includes WorkflowBuilder.build() errors or other unexpected issues
+                 logger.exception(f"Unexpected error creating Stagehand task.", extra={**log_st_create, "error": str(e), "status": "failed_unexpected_error"})
                  raise self.TaskCreationError(f"Unexpected error creating Stagehand task: {e}") from e
 
-
             # 2. Provision Browserbase Sessions Concurrently
-            logger.info(f"Provisioning {num_sessions} Browserbase sessions...")
+            log_bb_provision = {**log_extra_base, "sub_action": "provision_browserbase_sessions", "stagehand_task_id": stagehand_task_id}
+            logger.info(f"Provisioning {num_sessions} Browserbase sessions.", extra=log_bb_provision)
+            
             session_creation_tasks = [
-                self._create_browserbase_session(session_config) for _ in range(num_sessions)
+                self._create_browserbase_session(project_id=final_bb_project_id, session_params=browserbase_session_params) 
+                for _ in range(num_sessions)
             ]
-            # Use return_exceptions=True to capture all outcomes
-            session_results = await asyncio.gather(*session_creation_tasks, return_exceptions=True)
+            session_creation_outcomes = await asyncio.gather(*session_creation_tasks, return_exceptions=True)
 
-            successful_session_ids = []
-            # Process results immediately to track created sessions for cleanup
-            for i, result in enumerate(session_results):
-                if isinstance(result, Exception):
-                    logger.error(f"Failed to create Browserbase session {i+1}/{num_sessions}: {result}")
+            for i, outcome in enumerate(session_creation_outcomes):
+                if isinstance(outcome, Exception):
+                    logger.error(f"Failed to create Browserbase session {i+1}/{num_sessions}.", exc_info=outcome, extra={**log_bb_provision, "session_index": i, "error": str(outcome), "status": "failed"})
                     execution_results.append({
-                        "sessionId": None,
-                        "stagehandTaskId": stagehand_task_id,
-                        "stagehandExecutionId": None,
-                        "status": "failed_session_creation",
-                        "error": str(result)
+                        "sessionId": None, "stagehandTaskId": stagehand_task_id, "stagehandExecutionId": None,
+                        "status": "failed_session_creation", "error": str(outcome)
                     })
-                else:
-                    session_id = result
-                    successful_session_ids.append(session_id)
-                    browserbase_sessions_created.append(session_id) # Track successfully created sessions
-                    session_info = self.get_session_info(session_id)
-                    if session_info: # Should always exist if creation succeeded
+                else: # Success
+                    session_id = outcome
+                    browserbase_sessions_created_ids.append(session_id)
+                    session_info = self.get_session_info(session_id) # Should exist
+                    if session_info:
                          session_info.state = "busy"
                          session_info.task_id = stagehand_task_id
-                    else:
-                         # This case should theoretically not happen if _create_browserbase_session is correct
-                         logger.error(f"Session {session_id} created but not found in tracker!")
+                    logger.info(f"Browserbase session {i+1}/{num_sessions} provisioned successfully: {session_id}", extra={**log_bb_provision, "session_index": i, "session_id": session_id, "status": "success"})
+            
+            if not browserbase_sessions_created_ids:
+                 logger.warning("No Browserbase sessions were created successfully. Aborting workflow execution.", extra={**log_bb_provision, "status": "aborted_no_sessions"})
+                 return execution_results # Contains only session creation failures
 
-            if not successful_session_ids:
-                 logger.warning("No Browserbase sessions were created successfully. Aborting workflow execution.")
-                 # No sessions to execute on, skip to finally block for cleanup
-                 # Return the collected session creation errors
-                 return execution_results
-
-            logger.info(f"Successfully provisioned {len(successful_session_ids)}/{num_sessions} Browserbase sessions.")
+            logger.info(f"Successfully provisioned {len(browserbase_sessions_created_ids)}/{num_sessions} Browserbase sessions.", extra=log_bb_provision)
 
             # 3. Execute Stagehand Task on Successfully Created Sessions Concurrently
-            logger.info(f"Executing Stagehand task {stagehand_task_id} on {len(successful_session_ids)} sessions...")
-            execution_tasks = [
+            log_st_execute = {**log_extra_base, "sub_action": "execute_stagehand_task", "stagehand_task_id": stagehand_task_id, "num_sessions_to_run": len(browserbase_sessions_created_ids)}
+            logger.info(f"Executing Stagehand task on {len(browserbase_sessions_created_ids)} sessions.", extra=log_st_execute)
+            
+            task_execution_tasks = [
                 self.stagehand_client.execute_task(task_id=stagehand_task_id, browser_session_id=session_id)
-                for session_id in successful_session_ids
+                for session_id in browserbase_sessions_created_ids
             ]
-            # Use return_exceptions=True
-            task_execution_outputs = await asyncio.gather(*execution_tasks, return_exceptions=True)
+            task_execution_outcomes = await asyncio.gather(*task_execution_tasks, return_exceptions=True)
 
             # 4. Collect and Process Execution Results
-            logger.info(f"Processing execution results for {len(successful_session_ids)} sessions...")
-            for i, output in enumerate(task_execution_outputs):
-                session_id = successful_session_ids[i]
+            logger.info(f"Processing {len(task_execution_outcomes)} Stagehand execution results...", extra=log_st_execute)
+            for i, outcome in enumerate(task_execution_outcomes):
+                session_id = browserbase_sessions_created_ids[i]
                 session_info = self.get_session_info(session_id)
-                result_entry = {
-                    "sessionId": session_id,
-                    "stagehandTaskId": stagehand_task_id,
-                    "stagehandExecutionId": None,
-                    "status": "unknown", # Default status
-                    "error": None
-                }
-                if isinstance(output, Exception):
-                    logger.error(f"Stagehand task execution failed for session {session_id}: {output}")
+                current_log_extra = {**log_st_execute, "session_id": session_id}
+                
+                result_entry = {"sessionId": session_id, "stagehandTaskId": stagehand_task_id, "stagehandExecutionId": None, "status": "unknown", "error": None}
+                if isinstance(outcome, Exception):
+                    logger.error(f"Stagehand task execution failed for session.", exc_info=outcome, extra={**current_log_extra, "error": str(outcome), "status": "failed"})
                     result_entry["status"] = "failed_execution"
-                    result_entry["error"] = str(output)
-                    if session_info: session_info.state = "error"
-                else:
-                    # Assuming success response format
-                    execution_id = output.get("executionId")
-                    status = output.get("status", "success") # Assume success if status missing but no exception
-                    logger.info(f"Stagehand task execution completed for session {session_id}. Execution ID: {execution_id}, Status: {status}")
+                    result_entry["error"] = str(outcome)
+                    if session_info: session_info.state = "error_execution_failed"
+                else: # Success from Stagehand execute_task
+                    execution_id = outcome.get("executionId")
+                    task_status = outcome.get("status", "success_unknown_stagehand_status") # Default if Stagehand status missing
+                    logger.info(f"Stagehand task execution reported status: {task_status}", extra={**current_log_extra, "stagehand_execution_id": execution_id, "stagehand_status": task_status, "status": "success"})
                     result_entry["stagehandExecutionId"] = execution_id
-                    result_entry["status"] = status
-                    # Mark as idle after successful execution, ready for release
-                    if session_info: session_info.state = "idle"
+                    result_entry["status"] = task_status 
+                    if session_info: session_info.state = "idle" # Ready for release or next task
 
                 execution_results.append(result_entry)
-
-            logger.info("Finished processing all task executions for successfully created sessions.")
+            logger.info("Finished processing all Stagehand task executions.", extra=log_st_execute)
             return execution_results
 
         except (self.TaskCreationError, self.SessionCreationError, self.TaskExecutionError, self.OrchestratorError) as e:
-            # Catch known Orchestrator errors
-            logger.error(f"Orchestration failed: {e}", exc_info=True)
-            main_exception = e # Store the primary exception
-            # Depending on where the error occurred, execution_results might already contain partial data
-            # Ensure the final return reflects the overall failure state if needed.
-            # For now, we let the finally block handle cleanup and re-raise the caught exception.
-            raise
+            logger.error(f"Orchestration failed: {type(e).__name__}", exc_info=True, extra={**log_extra_base, "error": str(e), "status": "failed_orchestration_error"})
+            main_exception = e
+            raise 
         except Exception as e:
-            # Catch any other unexpected errors during orchestration
-            logger.exception(f"Unexpected error during workflow execution: {e}")
-            main_exception = e # Store the primary exception
-            # Wrap in a generic OrchestratorError before re-raising
+            logger.exception(f"Unexpected error during workflow execution.", extra={**log_extra_base, "error": str(e), "status": "failed_unexpected_error"})
+            main_exception = e
             raise self.OrchestratorError(f"Unexpected orchestration error: {e}") from e
 
         finally:
-            # 5. Release ALL successfully created Browserbase Sessions, regardless of execution outcome
-            if browserbase_sessions_created:
-                logger.info(f"Ensuring release of {len(browserbase_sessions_created)} created Browserbase sessions...")
-                release_tasks = [self._release_browserbase_session(sid) for sid in browserbase_sessions_created]
-                release_results = await asyncio.gather(*release_tasks, return_exceptions=True)
-                release_errors = []
-                for i, res in enumerate(release_results):
-                    session_id_to_release = browserbase_sessions_created[i]
-                    if isinstance(res, Exception) or not res:
-                        # Log release failure but don't let it mask the main execution error
-                        error_msg = f"Failed to release Browserbase session {session_id_to_release}: {res}"
-                        logger.error(error_msg)
-                        release_errors.append(error_msg)
-                    else:
-                         logger.info(f"Successfully released session {session_id_to_release}.")
+            log_cleanup = {**log_extra_base, "sub_action": "release_browserbase_sessions_cleanup"}
+            if browserbase_sessions_created_ids:
+                logger.info(f"Ensuring release of {len(browserbase_sessions_created_ids)} created Browserbase sessions...", extra=log_cleanup)
+                release_tasks = [
+                    self._release_browserbase_session(sid, project_id=final_bb_project_id) 
+                    for sid in browserbase_sessions_created_ids
+                ]
+                release_outcomes = await asyncio.gather(*release_tasks, return_exceptions=True)
                 
-                if release_errors and main_exception:
-                     # If there was a main error AND release errors, log the release errors clearly
-                     logger.error(f"Additionally, errors occurred during session release: {'; '.join(release_errors)}")
-                elif release_errors and not main_exception:
-                     # If the main execution succeeded but release failed, maybe raise an error?
-                     # For now, just logging is likely sufficient.
-                     logger.warning("Workflow execution succeeded, but errors occurred during session release.")
+                release_errors_details = []
+                for i, res_outcome in enumerate(release_outcomes):
+                    session_id_to_release = browserbase_sessions_created_ids[i]
+                    current_release_log_extra = {**log_cleanup, "session_id": session_id_to_release}
+                    if isinstance(res_outcome, Exception) or not res_outcome: # Checks for Exception or False return
+                        error_msg = f"Failed to release Browserbase session {session_id_to_release}: {res_outcome}"
+                        logger.error(error_msg, extra={**current_release_log_extra, "error": str(res_outcome), "status": "failed"})
+                        release_errors_details.append(error_msg)
+                    else:
+                         logger.info(f"Successfully released session.", extra={**current_release_log_extra, "status": "success"})
+                
+                if release_errors_details:
+                    final_error_summary = f"Additionally, {len(release_errors_details)} error(s) occurred during session release: {'; '.join(release_errors_details)}"
+                    if main_exception:
+                        logger.error(final_error_summary, extra=log_cleanup)
+                    else: # Main workflow might have succeeded
+                        logger.warning(f"Workflow execution may have had successes, but {final_error_summary}", extra=log_cleanup)
+            else:
+                logger.info("No Browserbase sessions were successfully created, so no specific release needed in cleanup.", extra=log_cleanup)
+
 
     def start_api_server(self, host: str = "0.0.0.0", port: int = 8000):
         """Starts the FastAPI server for the Orchestrator's API (e.g., health check)."""
-        logger.info(f"Starting Orchestrator API server on {host}:{port}")
+        log_extra = {**DEFAULT_LOG_EXTRA, "action": "start_api_server", "host": host, "port": port}
+        logger.info(f"Starting Orchestrator API server.", extra=log_extra)
         uvicorn.run(app, host=host, port=port)
 
 # Example usage (if run directly, for testing)
 async def main():
-    # Load secrets from .env (requires python-dotenv)
-    # from dotenv import load_dotenv
-    # load_dotenv()
-    # bb_key = os.getenv("BROWSERBASE_API_KEY")
-    # sh_key = os.getenv("STAGEHAND_API_KEY")
+    # Example: Override basicConfig for more detailed local testing if desired
+    # logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - Action: %(action)s - %(message)s')
+    # logger.setLevel(logging.DEBUG) # Ensure module logger also respects this for testing
 
-    # For testing without .env:
-    bb_key = "dummy_bb_key" # Replace with actual if testing live
-    sh_key = "dummy_sh_key" # Replace with actual if testing live
+    # For testing without .env or actual keys:
+    bb_key = "dummy_bb_key_from_main" 
+    sh_key = "dummy_sh_key_from_main"
+    
+    # You'd typically load these from config or environment in a real app
+    orchestrator_config = {
+        "browserbase_api_key": bb_key,
+        "stagehand_api_key": sh_key,
+        "browserbase_project_id": "project_dummy_123" # Example project ID
+    }
 
-    if not bb_key or not sh_key:
-        print("API keys not found. Set BROWSERBASE_API_KEY and STAGEHAND_API_KEY env vars or provide directly.")
-        return
-
-    orchestrator = Orchestrator(
-        browserbase_api_key=bb_key,
-        stagehand_api_key=sh_key
-    )
+    orchestrator = Orchestrator(config=orchestrator_config)
+    logger.info("Orchestrator instance created for main() example.", extra={"action": "main_example_start"})
 
     try:
-        print("Attempting to create a session...")
-        session_id = await orchestrator._create_browserbase_session()
-        print(f"Session created: {session_id}")
+        # Example: Create a session (mocked or with dummy keys this will likely fail at API call)
+        # This demonstrates how project_id flows from config if not passed directly
+        # logger.info("Attempting to create a session via main() example...", extra={"action": "main_example_create_session_attempt"})
+        # session_id = await orchestrator._create_browserbase_session(session_params={"test_param": "value"})
+        # logger.info(f"Session created via main() example: {session_id}", extra={"action": "main_example_create_session_success", "session_id": session_id})
 
-        print("Active sessions:", orchestrator.list_active_sessions())
-        info = orchestrator.get_session_info(session_id)
-        print("Session info:", info)
+        # logger.info(f"Active sessions via main(): {orchestrator.list_active_sessions()}", extra={"action": "main_example_list_sessions"})
+        # info = orchestrator.get_session_info(session_id)
+        # logger.info(f"Session info via main(): {info}", extra={"action": "main_example_get_session_info"})
 
-        print("Attempting to release the session...")
-        released = await orchestrator._release_browserbase_session(session_id)
-        print(f"Session released: {released}")
-        print("Active sessions after release:", orchestrator.list_active_sessions())
-
-    except (BrowserbaseAPIError, StagehandAPIError, BrowserbaseConfigError, StagehandConfigError) as e:
-        print(f"API or Config Error: {e}")
+        # logger.info("Attempting to release the session via main() example...", extra={"action": "main_example_release_session_attempt"})
+        # released = await orchestrator._release_browserbase_session(session_id)
+        # logger.info(f"Session released via main() example: {released}", extra={"action": "main_example_release_session_success", "released_status": released})
+        # logger.info(f"Active sessions after release via main(): {orchestrator.list_active_sessions()}", extra={"action": "main_example_list_sessions_after_release"})
+        pass # Keep main simple, focus on init logging for now
+    
+    except Orchestrator.SessionCreationError as e:
+        logger.error(f"SessionCreationError in main example: {e}", exc_info=True, extra={"action": "main_example_session_creation_error"})
+    except (BrowserbaseAPIError, StagehandAPIError, StagehandConfigError) as e: # Added StagehandConfigError
+        logger.error(f"API or Config Error in main example: {e}", exc_info=True, extra={"action": "main_example_api_config_error"})
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        logger.exception(f"An unexpected error occurred in main() example.", extra={"action": "main_example_unexpected_error"})
     finally:
+        logger.info("Closing orchestrator from main() example.", extra={"action": "main_example_close_orchestrator"})
         await orchestrator.close()
 
 if __name__ == "__main__":
-    # Note: Running __main__ requires mocking or actual API keys
-    # asyncio.run(main())
-    print("Orchestrator module loaded. Run main() with appropriate keys/mocks for testing.")
-    # This is primarily for standalone testing of the API server.
+    logger.info("Orchestrator module loaded directly (__name__ == '__main__').", extra={"action": "main_execution_start"})
+    
+    # To run the main example async function:
+    # asyncio.run(main()) 
+    # logger.info("Async main() example finished.", extra={"action": "main_execution_complete_async_main"})
+
+    # To start the API server (as in original code):
+    logger.info("Starting Orchestrator API server directly from __main__ block...", extra={"action": "main_start_api_server"})
     # In a real deployment, a process manager (like gunicorn with uvicorn workers) would be used.
-    print("Starting Orchestrator API server directly...")
-    # In a real scenario, you might instantiate Orchestrator and then call start_api_server
-    # For now, just running the app directly for the health check endpoint.
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info") 
