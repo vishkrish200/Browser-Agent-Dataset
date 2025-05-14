@@ -9,7 +9,7 @@ from src.stagehand_client import StagehandClient #, StagehandAPIError
 
 from .types import StorageConfig, StepData, ActionData
 from .storage import StorageBackend, get_storage_backend # S3Storage, LocalStorage
-from .exceptions import DataCollectionError, ConfigurationError
+from .exceptions import DataCollectionError, ConfigurationError, StorageError
 from . import config as collector_config # Default configurations for the collector
 
 logger = logging.getLogger(__name__)
