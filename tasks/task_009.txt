@@ -200,11 +200,23 @@ Implementation Plan:
    - JSON output format option for machine parsing
 </info added on 2025-05-14T18:22:16.782Z>
 
-## 5. Create Comprehensive Help Documentation [pending]
+## 5. Create Comprehensive Help Documentation [done]
 ### Dependencies: 9.1, 9.2, 9.3
 ### Description: Develop in-tool help documentation and usage guides for all commands and options.
 ### Details:
 Document all public flags and options. Create command-specific help text. Implement examples for common use cases. Ensure help text follows consistent formatting and style.
+<info added on 2025-05-14T18:25:18.249Z>
+Document all public flags and options. Create command-specific help text. Implement examples for common use cases. Ensure help text follows consistent formatting and style.
+
+Implementation plan:
+1. Review auto-generated help by systematically invoking `--help` for all commands and subcommands to check clarity and completeness of descriptions for commands, arguments, and options.
+2. Enhance docstrings and help texts by updating docstrings in `main.py`, `configure_cli.py`, and `collect_cli.py` as needed, and refining `help` parameters in `typer.Option()` and `typer.Argument()` calls for better clarity.
+3. Verify `no_args_is_help=True` behavior to confirm that invoking a command group without a subcommand displays its help.
+4. Test help output robustly by adding assertions in `tests/cli/test_main.py` or a new `test_help.py` that check for specific content/keywords in the `--help` output for each command, beyond just the exit code.
+5. Ensure all help documentation follows a consistent style guide and formatting pattern.
+6. Include practical examples for each command that demonstrate common use cases and workflows.
+7. Document any environment variables or configuration files that affect CLI behavior.
+</info added on 2025-05-14T18:25:18.249Z>
 
 ## 6. Implement Testing Framework [pending]
 ### Dependencies: 9.2, 9.3, 9.4

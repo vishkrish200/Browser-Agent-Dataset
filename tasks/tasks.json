@@ -676,8 +676,8 @@
             2,
             3
           ],
-          "details": "Document all public flags and options. Create command-specific help text. Implement examples for common use cases. Ensure help text follows consistent formatting and style.",
-          "status": "pending"
+          "details": "Document all public flags and options. Create command-specific help text. Implement examples for common use cases. Ensure help text follows consistent formatting and style.\n<info added on 2025-05-14T18:25:18.249Z>\nDocument all public flags and options. Create command-specific help text. Implement examples for common use cases. Ensure help text follows consistent formatting and style.\n\nImplementation plan:\n1. Review auto-generated help by systematically invoking `--help` for all commands and subcommands to check clarity and completeness of descriptions for commands, arguments, and options.\n2. Enhance docstrings and help texts by updating docstrings in `main.py`, `configure_cli.py`, and `collect_cli.py` as needed, and refining `help` parameters in `typer.Option()` and `typer.Argument()` calls for better clarity.\n3. Verify `no_args_is_help=True` behavior to confirm that invoking a command group without a subcommand displays its help.\n4. Test help output robustly by adding assertions in `tests/cli/test_main.py` or a new `test_help.py` that check for specific content/keywords in the `--help` output for each command, beyond just the exit code.\n5. Ensure all help documentation follows a consistent style guide and formatting pattern.\n6. Include practical examples for each command that demonstrate common use cases and workflows.\n7. Document any environment variables or configuration files that affect CLI behavior.\n</info added on 2025-05-14T18:25:18.249Z>",
+          "status": "done"
         },
         {
           "id": 6,
