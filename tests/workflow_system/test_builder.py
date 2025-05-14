@@ -1,5 +1,5 @@
 import pytest
-from src.workflow_system import WorkflowBuilder, WorkflowError, InvalidActionError # Corrected import
+from src.workflow_system import WorkflowBuilder, WorkflowError, InvalidActionError, WorkflowValidationError # Added WorkflowValidationError
 from src.workflow_system import actions # Import action constants
 
 # Basic tests will be added in a subsequent subtask (e.g., 8.2 or 8.8)
@@ -14,10 +14,10 @@ from src.workflow_system import actions # Import action constants
 #     with pytest.raises(ValueError): # Or WorkflowError when defined 
 
 def test_workflow_builder_initialization():
-    """Test basic initialization and build of an empty workflow."""
+    """Test basic initialization of the workflow builder."""
     builder = WorkflowBuilder(workflow_name="TestFlow_Init")
     assert builder.workflow_name == "TestFlow_Init"
-    assert builder.build() == {"name": "TestFlow_Init", "steps": []}
+    assert builder._steps == []
 
 def test_workflow_builder_empty_name_fail():
     """Test that initializing with an empty name raises WorkflowError."""
@@ -164,4 +164,10 @@ def test_build_method():
 #     assert payload["steps"] == []
 #     # If we later decide to raise WorkflowValidationError for empty steps:
 #     # with pytest.raises(WorkflowValidationError, match="Cannot build an empty workflow"):
-#     #     builder.build() 
+#     #     builder.build()
+
+def test_build_empty_workflow_raises_error():
+    """Test that building an empty workflow raises WorkflowValidationError."""
+    builder = WorkflowBuilder(workflow_name="EmptyBuildFail")
+    with pytest.raises(WorkflowValidationError, match="Cannot build an empty workflow. Add at least one step."):
+        builder.build() 

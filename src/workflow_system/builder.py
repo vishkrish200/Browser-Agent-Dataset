@@ -132,9 +132,8 @@ class WorkflowBuilder:
         """
         if not self._steps:
             # Depending on Stagehand, an empty steps list might be valid for a named workflow
-            # or it might be an error. For now, let's allow it but one might raise WorkflowValidationError here.
-            # raise WorkflowValidationError("Cannot build an empty workflow. Add at least one step.")
-            pass 
+            # or it might be an error. For MVP, let's enforce at least one step.
+            raise WorkflowValidationError("Cannot build an empty workflow. Add at least one step.")
 
         # This structure MUST match what StagehandClient.create_task expects for its payload.
         return {
