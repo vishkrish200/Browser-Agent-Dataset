@@ -688,8 +688,8 @@
             3,
             4
           ],
-          "details": "Create unit tests for core functionality. Implement integration tests for end-to-end workflows. Develop validation tests for generated code. Set up CI integration for automated testing.",
-          "status": "pending"
+          "details": "Create unit tests for core functionality. Implement integration tests for end-to-end workflows. Develop validation tests for generated code. Set up CI integration for automated testing.\n<info added on 2025-05-14T18:27:18.743Z>\nCreate unit tests for core functionality. Implement integration tests for end-to-end workflows. Develop validation tests for generated code. Set up CI integration for automated testing.\n\nFor CLI testing specifically:\n1. Review existing CLI test files (test_main.py, test_config.py, test_logging.py) to ensure comprehensive coverage of all commands, subcommands, and options, with special attention to configure init command's .env file interactions.\n\n2. Refine test assertions to be more robust:\n   - Replace exact string match assertions for typer.echo outputs with more flexible checks for key phrases/information\n   - Ensure caplog assertions properly target expected log messages and levels\n\n3. Identify and address testing gaps:\n   - Add missing tests for command groups with no_args_is_help=True functionality\n   - Ensure all error handling paths are properly tested\n\n4. Document placeholder test status for commands with incomplete implementation (e.g., collect list-workflows), noting that these tests currently only verify exit codes and will require updates as command implementations are completed.\n\n5. Evaluate and confirm that the current test file organization is maintainable as the CLI functionality expands.\n</info added on 2025-05-14T18:27:18.743Z>",
+          "status": "done"
         },
         {
           "id": 7,

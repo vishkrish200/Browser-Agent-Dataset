@@ -31,9 +31,12 @@ def hide_real_dotenv(monkeypatch):
     if existed:
         moved_env_path.rename(real_env_path) # Restore it
 
-def test_default_settings_loaded():
-    # Assuming no .env and no relevant env vars are set for these specific keys
-    # This test is a bit fragile if global env vars for these happen to be set.
+def test_default_settings_loaded(monkeypatch):
+    # Ensure a clean slate for these specific keys by removing them from env vars if they exist
+    monkeypatch.delenv("LOG_LEVEL", raising=False)
+    monkeypatch.delenv("DEFAULT_OUTPUT_DIR", raising=False)
+    monkeypatch.delenv("BROWSERBASE_API_KEY", raising=False)
+    
     s = AppSettings() # Create a new instance for isolation
     assert s.LOG_LEVEL == "INFO" # Default from AppSettings model
     assert s.DEFAULT_OUTPUT_DIR == "output"
@@ -90,19 +93,25 @@ def test_env_vars_priority_over_dotenv(tmp_path: Path, monkeypatch, hide_real_do
 
 # --- Tests for `bad-agent configure init` command --- #
 
-def test_configure_init_when_dotenv_exists(monkeypatch):
-    # Ensure a .env file *appears* to exist from the test's perspective
-    def mock_exists(path_obj):
-        return str(path_obj) == ".env" # Only true for the direct ".env" check
-    
-    monkeypatch.setattr(Path, "exists", mock_exists)
-    # We don't need to mock resolve or read/write for this specific output check
+def test_configure_init_when_dotenv_exists(tmp_path: Path, hide_real_dotenv):
+    original_cwd = os.getcwd()
+    # Create a dummy project dir inside tmp_path and cd into it
+    project_dir = tmp_path / "project_with_env"
+    project_dir.mkdir()
+    os.chdir(project_dir)
 
-    result = runner.invoke(cli_app, ["configure", "init"], input="y\n") # Answer yes to prompts if any
+    # Create a dummy .env file in this temporary project directory
+    dummy_env = project_dir / ".env"
+    dummy_env.write_text("EXISTING_KEY=TEST_VALUE\n")
+
+    result = runner.invoke(cli_app, ["configure", "init"], input="y\n") 
+    
+    os.chdir(original_cwd) # Change back
+
     assert result.exit_code == 0
     assert "Found existing .env file" in result.stdout
     assert "Please ensure it contains all necessary keys" in result.stdout
-
+    # dummy_env.unlink() # Clean up the dummy .env if needed, tmp_path handles overall cleanup
 
 def test_configure_init_create_dotenv(tmp_path: Path, hide_real_dotenv):
     # This test will run in tmp_path, so .env won't exist there initially

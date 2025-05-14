@@ -26,6 +26,13 @@ def test_configure_help():
     assert "Manage CLI and project configuration." in result.stdout
     assert "init" in result.stdout
 
+def test_configure_no_args_is_help():
+    result_no_args = runner.invoke(app, ["configure"])
+    result_help = runner.invoke(app, ["configure", "--help"])
+    assert result_no_args.exit_code == 0
+    assert result_help.exit_code == 0
+    assert result_no_args.stdout == result_help.stdout
+
 def test_configure_init_command():
     result = runner.invoke(app, ["configure", "init"])
     assert result.exit_code == 0
@@ -43,6 +50,13 @@ def test_collect_help():
     assert "Run data collection workflows." in result.stdout
     assert "list-workflows" in result.stdout
     assert "run" in result.stdout
+
+def test_collect_no_args_is_help():
+    result_no_args = runner.invoke(app, ["collect"])
+    result_help = runner.invoke(app, ["collect", "--help"])
+    assert result_no_args.exit_code == 0
+    assert result_help.exit_code == 0
+    assert result_no_args.stdout == result_help.stdout
 
 def test_collect_list_workflows_command():
     result = runner.invoke(app, ["collect", "list-workflows"])
