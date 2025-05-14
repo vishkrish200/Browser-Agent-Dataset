@@ -1,6 +1,26 @@
 import typer
+import logging
+import sys
+
 from . import configure_cli
 from . import collect_cli
+from .config import settings
+
+def setup_logging():
+    """Configures basic logging for the CLI."""
+    log_level_str = settings.LOG_LEVEL.upper()
+    numeric_level = getattr(logging, log_level_str, logging.INFO)
+    
+    # Basic configuration affecting the root logger
+    logging.basicConfig(
+        level=numeric_level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stderr)
+        ]
+    )
+    # You can get more specific loggers elsewhere, but this sets the baseline
+    # for any logger obtained via logging.getLogger()
 
 app = typer.Typer(
     name="bad-agent",
@@ -27,6 +47,7 @@ def main_callback(
     """
     Browser Agent Dataset CLI
     """
+    setup_logging()
     # This callback runs before any command
     # You can use ctx.invoked_subcommand to see if a subcommand is being called
     pass

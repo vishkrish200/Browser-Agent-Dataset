@@ -162,11 +162,43 @@ The configuration management system will be implemented using Pydantic-settings 
    - Test configuration priority resolution
 </info added on 2025-05-14T18:18:39.553Z>
 
-## 4. Build Progress Tracking and Logging System [pending]
+## 4. Build Progress Tracking and Logging System [done]
 ### Dependencies: 9.1
 ### Description: Implement comprehensive logging and progress reporting for CLI operations.
 ### Details:
 Create a logging system with multiple verbosity levels. Implement progress indicators for long-running tasks. Design error reporting that fails noisily and as early as possible. Support both human-readable and machine-parseable output formats.
+<info added on 2025-05-14T18:22:16.782Z>
+Create a logging system with multiple verbosity levels. Implement progress indicators for long-running tasks. Design error reporting that fails noisily and as early as possible. Support both human-readable and machine-parseable output formats.
+
+Implementation Plan:
+1. Basic Logging Configuration:
+   - Create a `setup_logging()` function in `src/bad_agent_cli/main.py`
+   - Call this function from `main_callback` to initialize logging early
+   - Configure the root logger level based on `settings.LOG_LEVEL`
+   - Implement a simple formatter and attach a `StreamHandler` to `sys.stderr`
+
+2. Command-Specific Logging:
+   - Add logger instances in command modules (`configure_cli.py`, `collect_cli.py`) using `logging.getLogger(__name__)`
+   - Replace appropriate `print()` statements with proper log level calls (`logger.info()`, `logger.debug()`, etc.)
+   - Ensure consistent log message formatting across all modules
+
+3. User Feedback Strategy:
+   - Maintain `typer.echo()` for direct user-facing output
+   - Use `logger.error()`/`logger.exception()` for error conditions
+   - Complement error logging with `typer.secho()` for highlighted user feedback
+   - Ensure clear separation between diagnostic logs and user interface elements
+
+4. Testing Approach:
+   - Create tests in existing test files or a new `test_logging.py`
+   - Utilize pytest's `caplog` fixture to verify log output
+   - Validate that `LOG_LEVEL` setting properly controls log verbosity
+   - Test error conditions to ensure proper logging and user feedback
+
+5. Future Considerations:
+   - File logging support as a post-MVP enhancement
+   - Progress bar integration for long-running operations
+   - JSON output format option for machine parsing
+</info added on 2025-05-14T18:22:16.782Z>
 
 ## 5. Create Comprehensive Help Documentation [pending]
 ### Dependencies: 9.1, 9.2, 9.3
