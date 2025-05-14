@@ -141,5 +141,31 @@ class WorkflowBuilder:
             "steps": self._steps
         }
 
+    def get_steps_payload(self) -> List[Dict[str, Any]]:
+        """Returns a copy of the internal list of step dictionaries."""
+        return list(self._steps) # Return a copy
+
+    def to_readable_steps(self) -> List[str]:
+        """Generates a list of human-readable strings representing the workflow steps."""
+        readable = []
+        for i, step in enumerate(self._steps):
+            action_type = step.get("actionType", "UNKNOWN_ACTION")
+            params = {k: v for k, v in step.items() if k not in ["type", "actionType"]}
+            param_str = ", ".join([f"{k}='{v}'" if isinstance(v, str) else f"{k}={v}" for k, v in params.items()])
+            readable.append(f"{i+1}. {action_type.upper()}: {param_str}")
+        return readable
+
     def __repr__(self) -> str:
-        return f"WorkflowBuilder(workflow_name='{self.workflow_name}', steps={len(self._steps)})" 
+        # Show first few action types for a more informative repr
+        num_steps_to_show = 3
+        step_previews_list = []
+        if self._steps:
+            for i, step in enumerate(self._steps[:num_steps_to_show]):
+                action_type = step.get("actionType", "?")
+                step_previews_list.append(action_type)
+            if len(self._steps) > num_steps_to_show:
+                step_previews_list.append("...")
+        
+        joined_previews = ", ".join(step_previews_list)
+        preview_str = f", initial_actions=[{joined_previews}]" if step_previews_list else ""
+        return f"WorkflowBuilder(workflow_name='{self.workflow_name}', steps={len(self._steps)}{preview_str})" 

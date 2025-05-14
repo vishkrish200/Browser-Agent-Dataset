@@ -170,4 +170,52 @@ def test_build_empty_workflow_raises_error():
     """Test that building an empty workflow raises WorkflowValidationError."""
     builder = WorkflowBuilder(workflow_name="EmptyBuildFail")
     with pytest.raises(WorkflowValidationError, match="Cannot build an empty workflow. Add at least one step."):
-        builder.build() 
+        builder.build()
+
+# --- Tests for new/updated debugging helper methods ---
+
+def test_get_steps_payload():
+    builder = WorkflowBuilder(workflow_name="GetStepsTest")
+    assert builder.get_steps_payload() == [] # Empty initially
+    builder.navigate("https://a.com")
+    step1 = {"type": "action", "actionType": actions.NAVIGATE, "url": "https://a.com"}
+    assert builder.get_steps_payload() == [step1]
+    # Ensure it's a copy
+    payload = builder.get_steps_payload()
+    payload.append("rogue_step")
+    assert len(builder._steps) == 1 
+    assert builder.get_steps_payload() == [step1] 
+
+def test_to_readable_steps():
+    builder = WorkflowBuilder(workflow_name="ReadableTest")
+    assert builder.to_readable_steps() == []
+
+    builder.navigate(url="https://example.com")
+    builder.click(selector="#btn", text_content_match="Go")
+    builder.type_text(selector="input", text_to_type="test", clear_before_type=True)
+    builder.wait_for_time(duration_ms=100)
+
+    readable = builder.to_readable_steps()
+    assert len(readable) == 4
+    assert readable[0] == "1. NAVIGATE: url='https://example.com'"
+    assert readable[1] == "2. CLICK: selector='#btn', textContentMatch='Go'"
+    assert readable[2] == "3. TYPE: selector='input', text='test', clearBefore=True"
+    assert readable[3] == "4. WAIT_FOR_TIME: duration=100"
+
+def test_workflow_builder_repr():
+    builder_empty = WorkflowBuilder(workflow_name="ReprEmpty")
+    assert repr(builder_empty) == "WorkflowBuilder(workflow_name='ReprEmpty', steps=0)"
+
+    builder_one_step = WorkflowBuilder(workflow_name="ReprOne")
+    builder_one_step.navigate("https://test.com")
+    assert repr(builder_one_step) == "WorkflowBuilder(workflow_name='ReprOne', steps=1, initial_actions=[navigate])"
+
+    builder_many_steps = WorkflowBuilder(workflow_name="ReprMany")
+    builder_many_steps.navigate("https://a.com")
+    builder_many_steps.click("#b")
+    builder_many_steps.type_text("input", "c")
+    builder_many_steps.wait_for_time(10)
+    # Expects: WorkflowBuilder(workflow_name='ReprMany', steps=4, initial_actions=[navigate, click, type, ...])
+    repr_str = repr(builder_many_steps)
+    assert "WorkflowBuilder(workflow_name='ReprMany', steps=4" in repr_str
+    assert "initial_actions=[navigate, click, type, ...]" in repr_str 
