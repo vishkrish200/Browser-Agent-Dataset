@@ -20,4 +20,8 @@ class DataFilteringError(DatasetBuilderError):
 
 class DataSplittingError(DatasetBuilderError):
     """Custom exception for data splitting errors."""
+    pass
+
+class DataStatisticsError(DatasetBuilderError):
+    """Custom exception for dataset statistics calculation errors."""
     pass 
