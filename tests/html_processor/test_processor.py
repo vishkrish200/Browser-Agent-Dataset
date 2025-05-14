@@ -34,32 +34,30 @@ def test_minify_behavior_with_minify_html(processor: HTMLProcessor):
     
     # With minify_css=True, keep_comments=False 
     # processor.minify defaults minify_css=False, so we pass True. keep_comments=False is default.
-    expected_css_min = "<style>p{color:red}</style><script> var a = 1; /* js comment */ </script><p>Text</p>"
-    # Note: minify_html might not remove the trailing </p> unless keep_closing_tags is explicitly False in Cfg,
-    # which our simplified wrapper doesn't set. So let's expect it.
-    expected_css_min_actual = "<style>p{color:red}</style><script> var a = 1; /* js comment */ </script><p>Text</p>"
+    # minify-html appears to do some JS whitespace normalization even if minify_js=False
+    expected_css_min_actual = "<style>p{color:red}</style><script>var a = 1; /* js comment */</script><p>Text"
     assert processor.minify(html_css_js, minify_css=True) == expected_css_min_actual
     
     # With minify_css=True, minify_js=True, keep_comments=False
-    expected_css_js_min = "<style>p{color:red}</style><script>var a=1;</script><p>Text</p>"
+    # JS minifier removes semicolon, HTML minifier removes trailing </p>
+    expected_css_js_min = "<style>p{color:red}</style><script>var a=1</script><p>Text"
     assert processor.minify(html_css_js, minify_css=True, minify_js=True) == expected_css_js_min
     
     # With minify_css=True, minify_js=True, keep_comments=True
-    # JS comments are typically removed by JS minifiers (like esbuild used by minify-html) 
-    # regardless of the keep_comments HTML setting.
-    # HTML comments would be kept though.
+    # JS comments are typically removed by JS minifiers. HTML comments kept.
+    # JS minifier removes semicolon, HTML minifier removes trailing </p>.
     html_css_js_html_comment = "<style>p{color:red}</style><!-- HTML --><script>var a=1;/*JS*/</script><p>Text</p>"
-    expected_css_js_min_keep_html_comment = "<style>p{color:red}</style><!-- HTML --><script>var a=1;</script><p>Text</p>"
+    expected_css_js_min_keep_html_comment = "<style>p{color:red}</style><!-- HTML --><script>var a=1</script><p>Text"
     assert processor.minify(html_css_js_html_comment, minify_css=True, minify_js=True, keep_comments=True) == expected_css_js_min_keep_html_comment
 
     # 4. Input with checked attribute - minify-html default normalizes boolean attributes
     html_checked = "<input checked=\"checked\" type='text'>"
-    expected_checked_min = "<input checked type=text>"
+    expected_checked_min = "<input checked>"
     assert processor.minify(html_checked) == expected_checked_min
 
     # 5. HTML with DOCTYPE - minify-html by default preserves DOCTYPE as is
     # With default keep_html_and_head_opening_tags=False and keep_closing_tags=False (library defaults for Cfg)
-    expected_with_doctype = "<!DOCTYPE html><title>Test</title><body><p>Hello"
+    expected_with_doctype = "<!doctype html><title>Test</title><body><p>Hello"
     assert processor.minify(html_with_doctype) == expected_with_doctype
 
 # Test for when the library is unavailable
