@@ -20,6 +20,9 @@ dependencies = [
     "httpx>=0.20.0",
 ]
 
+[project.scripts]
+bad-agent = "bad_agent_cli.main:app"
+
 [project.urls]
 "Homepage" = "https://github.com/yourusername/browser-agent-dataset" # Replace with actual URL
 "Bug Tracker" = "https://github.com/yourusername/browser-agent-dataset/issues" # Replace

@@ -1,2 +1,8 @@
+bad_agent_cli
 browserbase_client
+data_collector
+example_workflows
+html_processor
+pii_scrubber
 stagehand_client
+workflow_system

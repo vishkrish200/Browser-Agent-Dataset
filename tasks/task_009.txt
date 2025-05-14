@@ -71,11 +71,53 @@ The CLI structure will be designed with the following approach:
 The CLI will follow established conventions while providing both human-readable output and JSON support for automation. The design will prioritize future extensibility and maintainability.
 </info added on 2025-05-14T17:23:25.168Z>
 
-## 2. Implement Core Scaffolding Functionality [pending]
+## 2. Implement Core Scaffolding Functionality [done]
 ### Dependencies: 9.1
 ### Description: Develop the primary scaffolding engine that will generate project templates and code structures.
 ### Details:
 Build the core template generation system. Create standard templates for common components. Implement template variable substitution. Ensure templates follow best practices and are easily customizable.
+<info added on 2025-05-14T17:24:16.086Z>
+Build the core template generation system. Create standard templates for common components. Implement template variable substitution. Ensure templates follow best practices and are easily customizable.
+
+Implementation Plan:
+1. Add `typer[all]` to `requirements.txt` to enable full CLI features including shell completion
+2. Create the CLI directory structure:
+   - `src/bad_agent_cli/` as the main directory
+   - `src/bad_agent_cli/__init__.py` for package initialization
+   - `src/bad_agent_cli/main.py` to serve as the main Typer application entry point
+
+3. Implement a basic Typer application in `main.py`:
+   - Initialize the Typer app
+   - Add a version command (`bad-agent --version`)
+   - Set up the command structure
+
+4. Configure the project entry point in `pyproject.toml`:
+   - Add `[project.scripts]` section
+   - Set `bad-agent = "bad_agent_cli.main:app"` to make the CLI accessible
+
+5. Create modules for command groups:
+   - `src/bad_agent_cli/configure_cli.py` for configuration commands
+   - `src/bad_agent_cli/collect_cli.py` for collection commands
+   - Implement placeholder Typer apps/functions initially
+
+6. Register subcommands in `main.py`:
+   - Import sub-module Typer apps
+   - Register them with the main app (e.g., `app.add_typer(configure_cli.app, name="configure")`)
+
+7. Implement initial commands:
+   - Add `configure init` command in `configure_cli.py`
+   - Add `collect list-workflows` command in `collect_cli.py`
+   - Start with placeholder functionality
+
+8. Test installation and functionality:
+   - Install with `pip install -e .`
+   - Test commands: `bad-agent --help`, `bad-agent configure init`, `bad-agent collect list-workflows`
+
+9. Create basic CLI tests:
+   - Set up `tests/cli/` directory and `tests/cli/test_main.py`
+   - Use `Typer.testing.CliRunner` for command invocation tests
+   - Verify basic command structure and responses
+</info added on 2025-05-14T17:24:16.086Z>
 
 ## 3. Develop Configuration Management System [pending]
 ### Dependencies: 9.1
