@@ -4,6 +4,7 @@ import abc
 import os
 import gzip
 from typing import IO, Any, Union, Optional
+import io # For isinstance checks
 import logging
 
 from .types import StorageConfig
@@ -29,6 +30,48 @@ class StorageBackend(abc.ABC):
     def __init__(self, config: StorageConfig):
         self.config = config
         logger.info(f"StorageBackend initialized with type: {config.get('type')}")
+
+    async def _prepare_data_for_storage(self, data: Union[bytes, str, IO[Any]], artifact_name: str, is_gzipped: bool) -> bytes:
+        """Helper to convert input data to bytes and apply gzipping if needed."""
+        content_bytes: bytes
+        if isinstance(data, str):
+            content_bytes = data.encode('utf-8')
+        elif isinstance(data, bytes):
+            content_bytes = data
+        elif hasattr(data, 'read'): # IO stream
+            # Check if it's a text stream or binary stream
+            # A bit heuristic: if it's an instance of io.TextIOBase or if reading it yields str.
+            is_text_stream = isinstance(data, io.TextIOBase)
+            if not is_text_stream:
+                # Try reading a small amount to see if it's str or bytes
+                # This is imperfect; ideally, the IO object type would be more specific.
+                try:
+                    peeked_data = data.read(0) # Read 0 bytes to check type without consuming
+                    # If data.read() is expected to return str for text files and bytes for binary
+                    # However, some binary files might be wrapped in TextIOWrapper if opened incorrectly.
+                    # Let's assume if it's not TextIOBase, we try to read as bytes.
+                    # If it was opened as text, data.read() would return str.
+                    data.seek(0) # Reset after peek/read(0) attempt
+                    temp_read = data.read() # Read all
+                    if isinstance(temp_read, str):
+                        content_bytes = temp_read.encode('utf-8')
+                    elif isinstance(temp_read, bytes):
+                        content_bytes = temp_read
+                    else:
+                        raise TypeError(f"Unsupported IO stream content type: {type(temp_read)}")
+                    data.seek(0) # Reset again if original stream needs to be reused (though we read all here)
+                except Exception as e: # Broad catch if seek/read fails on weird streams
+                    raise StorageError(f"Could not reliably read from IO stream: {e}") from e
+            else: # It is an instance of io.TextIOBase
+                content_bytes = data.read().encode('utf-8')
+        else:
+            raise TypeError(f"Unsupported data type for storage: {type(data)}")
+
+        should_gzip = artifact_name.endswith(".gz") and not is_gzipped
+        if should_gzip:
+            return gzip.compress(content_bytes)
+        else:
+            return content_bytes
 
     @abc.abstractmethod
     async def store_artifact(
@@ -95,30 +138,19 @@ class LocalStorage(StorageBackend):
 
         try:
             logger.debug(f"LocalStorage: Attempting to store artifact at {full_path}")
-            
-            should_gzip = artifact_name.endswith(".gz") and not is_gzipped
-            
-            if isinstance(data, str):
-                content_bytes = data.encode('utf-8')
-            elif hasattr(data, 'read'): # IO stream
-                content_bytes = data.read()
-                if isinstance(content_bytes, str): # some streams might read as str
-                    content_bytes = content_bytes.encode('utf-8')
-            else: # bytes
-                content_bytes = data
-
-            if should_gzip:
-                content_bytes = gzip.compress(content_bytes)
+            final_bytes_to_store = await self._prepare_data_for_storage(data, artifact_name, is_gzipped)
             
             with open(full_path, 'wb') as f:
-                f.write(content_bytes)
+                f.write(final_bytes_to_store)
             logger.info(f"LocalStorage: Successfully stored artifact at {full_path}")
             return full_path
         except IOError as e:
             logger.error(f"LocalStorage: Failed to write artifact to {full_path}: {e}")
             raise LocalStorageError(f"Failed to write artifact to {full_path}: {e}") from e
-        except Exception as e:
+        except Exception as e: # Includes StorageError from _prepare_data_for_storage
             logger.exception(f"LocalStorage: Unexpected error storing artifact {full_path}: {e}")
+            if isinstance(e, StorageError):
+                raise
             raise LocalStorageError(f"Unexpected error storing artifact {full_path}: {e}") from e
 
     async def retrieve_artifact(self, artifact_path: str) -> bytes:
@@ -200,45 +232,9 @@ class S3Storage(StorageBackend):
         
         try:
             logger.debug(f"S3Storage: Attempting to store artifact at s3://{self.bucket_name}/{s3_key}")
+            final_bytes_to_store = await self._prepare_data_for_storage(data, artifact_name, is_gzipped)
             
-            should_gzip = artifact_name.endswith(".gz") and not is_gzipped
-            
-            if isinstance(data, str):
-                content_bytes = data.encode('utf-8')
-            elif hasattr(data, 'read'): # IO stream
-                # For S3, it's often better to pass the stream directly to upload_fileobj if possible
-                # But for consistency with gzipping, we might read it first.
-                # If data is already a file-like object (IO[bytes]), boto3 can handle it.
-                if 'b' in getattr(data, 'mode', '') or isinstance(getattr(data, 'peek', lambda: b'')(), bytes):
-                    # Likely a binary stream already
-                    pass 
-                else: # Text stream, read and encode
-                    content_str = data.read()
-                    content_bytes = content_str.encode('utf-8')
-                    data = content_bytes # Replace stream with bytes for consistent handling below
-            # else: data is bytes
-
-            if isinstance(data, bytes): # If data was string or text stream, it's now bytes
-                if should_gzip:
-                    final_data_bytes = gzip.compress(data)
-                else:
-                    final_data_bytes = data
-                self.s3_client.put_object(Bucket=self.bucket_name, Key=s3_key, Body=final_data_bytes)
-            
-            elif hasattr(data, 'read'): # Binary stream (IO[bytes])
-                if should_gzip:
-                    # Need to read, gzip, then upload. Boto3 can't gzip on the fly with upload_fileobj.
-                    read_bytes = data.read()
-                    gzipped_bytes = gzip.compress(read_bytes)
-                    self.s3_client.put_object(Bucket=self.bucket_name, Key=s3_key, Body=gzipped_bytes)
-                else:
-                    # data must be seekable for upload_fileobj in some cases or provide content_length
-                    # For simplicity here, we might have already read it if gzipping was an option.
-                    # If it's a binary file stream that doesn't need gzipping:
-                    data.seek(0) # Ensure stream is at the beginning
-                    self.s3_client.upload_fileobj(data, self.bucket_name, s3_key)
-            else:
-                raise TypeError(f"Unsupported data type for S3 storage: {type(data)}")
+            self.s3_client.put_object(Bucket=self.bucket_name, Key=s3_key, Body=final_bytes_to_store)
 
             full_s3_path = f"s3://{self.bucket_name}/{s3_key}"
             logger.info(f"S3Storage: Successfully stored artifact at {full_s3_path}")
@@ -246,8 +242,10 @@ class S3Storage(StorageBackend):
         except ClientError as e:
             logger.error(f"S3Storage: ClientError storing artifact s3://{self.bucket_name}/{s3_key}. Error: {e}")
             raise S3StorageError(f"S3 ClientError: {e}") from e
-        except Exception as e:
+        except Exception as e: # Includes StorageError from _prepare_data_for_storage
             logger.exception(f"S3Storage: Unexpected error storing artifact s3://{self.bucket_name}/{s3_key}. Error: {e}")
+            if isinstance(e, StorageError):
+                raise
             raise S3StorageError(f"Unexpected S3 error: {e}") from e
 
     async def retrieve_artifact(self, artifact_path: str) -> bytes:
