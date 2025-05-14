@@ -1,0 +1,79 @@
+# Task ID: 1
+# Title: Setup Project Repository and Environment
+# Status: done
+# Dependencies: None
+# Priority: high
+# Description: Initialize the project repository with basic structure, documentation, and environment configuration for the Browser-Agent Dataset MVP.
+# Details:
+1. Create GitHub repository with appropriate license (MIT recommended)
+2. Setup basic directory structure:
+   - `/src` - Core code
+   - `/config` - Configuration files
+   - `/scripts` - Utility scripts
+   - `/docs` - Documentation
+   - `/tests` - Test suite
+3. Create initial README.md with project overview, installation instructions
+4. Setup .env template for Browserbase and Stagehand API keys
+5. Configure .gitignore for Python, environment files, etc.
+6. Setup requirements.txt with initial dependencies
+7. Create basic CI/CD GitHub Actions workflow for linting and testing
+
+# Test Strategy:
+Verify repository structure is complete, environment variables load correctly, and CI/CD pipeline runs successfully on initial commit.
+
+# Subtasks:
+## 1. Create basic CI/CD GitHub Actions workflow [done]
+### Dependencies: None
+### Description: Set up a GitHub Actions workflow for linting and basic testing of the Python code.
+### Details:
+1. Create .github/workflows directory.
+2. Define a main.yml (or similar) workflow file.
+3. Configure the workflow to trigger on push/pull_request to the main branch.
+4. Add steps to checkout code, set up Python.
+5. Add a linting step (e.g., using Flake8 or Pylint).
+6. Add a basic testing step (e.g., running pytest, initially with minimal tests).
+<info added on 2025-05-11T10:46:34.184Z>
+1. Create .github/workflows directory.
+2. Define a main.yml (or similar) workflow file.
+3. Configure the workflow to trigger on push/pull_request to the main branch.
+4. Add steps to checkout code, set up Python.
+5. Add a linting step (e.g., using Flake8 or Pylint).
+6. Add a basic testing step (e.g., running pytest, initially with minimal tests).
+
+Implementation Plan:
+1. Create the directory `.github/workflows`.
+2. Create a file named `main.yml` inside `.github/workflows`.
+3. The content of `main.yml` will be:
+   * `name: Python CI`
+   * Trigger on `push` to `main` and `pull_request` to `main`.
+   * Define a job named `build`.
+   * Runs on `ubuntu-latest`.
+   * Steps:
+     * Checkout code: `actions/checkout@v4` (using v4 as it's current).
+     * Set up Python: `actions/setup-python@v4` (using v4) with Python version 3.10.
+     * Install dependencies: `pip install flake8 pytest` and then `pip install -r requirements.txt`. (Separating linter/tester install from project dependencies for clarity).
+     * Linting: `flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics` (using a slightly more verbose flake8 command for better output).
+     * Testing: `pytest`.
+</info added on 2025-05-11T10:46:34.184Z>
+<info added on 2025-05-11T10:47:22.679Z>
+The GitHub Actions workflow file has been successfully created and configured. The implementation includes:
+
+1. Created `.github/workflows` directory in the repository.
+2. Created `main.yml` workflow file with the following configuration:
+   - Workflow named "Python CI"
+   - Triggers on push and pull requests to the main branch
+   - Runs on ubuntu-latest
+   - Steps include:
+     - Code checkout using actions/checkout@v4
+     - Python 3.10 setup using actions/setup-python@v4
+     - Installation of dependencies (flake8, pytest, and project requirements)
+     - Linting with flake8 using standard error checks
+     - Running pytest for testing
+
+The workflow is now operational but requires additional work to be fully effective:
+1. Need to create actual test files in the repository
+2. Need to ensure `requirements.txt` is properly populated with all project dependencies
+3. Consider expanding the linting rules as the project grows
+4. May need to adjust the Python version based on project requirements
+</info added on 2025-05-11T10:47:22.679Z>
+

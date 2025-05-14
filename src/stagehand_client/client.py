@@ -1,6 +1,10 @@
 from typing import Optional, Union, Any, Dict
 import httpx
 import logging
+import asyncio # Added for sleep
+
+# Import tenacity for retry logic
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from . import config
 from .auth import AuthStrategy, ApiKeyAuth
@@ -72,33 +76,71 @@ class StagehandClient:
         request_url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
         logger.debug(f"Request: {method} {request_url} Payload: {kwargs.get('json') or kwargs.get('data')}")
 
-        # TEMPORARY DEBUGGING
-        print(f"[DEBUG] httpx request: method='{method}', endpoint='{endpoint}'")
-        print(f"[DEBUG] http_client base_url='{self.http_client.base_url}'")
+        # TEMPORARY DEBUGGING - Can remove later
+        # print(f"[DEBUG] httpx request: method='{method}', endpoint='{endpoint}'")
+        # print(f"[DEBUG] http_client base_url='{self.http_client.base_url}'")
 
+        # Define retry conditions
+        # Retry on connection errors, timeouts, and 5xx server errors
+        retry_conditions = retry_if_exception_type((httpx.RequestError, httpx.TimeoutException)) | \
+                           retry_if_exception_type(StagehandAPIError) # Retry on our custom API error as well
+
+        @retry(stop=stop_after_attempt(3), # Retry up to 3 times
+               wait=wait_exponential(multiplier=1, min=1, max=10), # Exponential backoff: 1s, 2s, 4s...
+               retry=retry_conditions,
+               before_sleep=lambda retry_state: logger.warning(
+                   f"Retrying {method} {request_url} due to {retry_state.outcome.exception()}. Attempt #{retry_state.attempt_number}"
+               ))
+        async def _make_request_with_retry():
+            try:
+                # Use the potentially recreated client property inside the retry loop
+                response = await self.http_client.request(method, endpoint, **kwargs)
+                response_summary = response.text[:500] + '...' if response.text and len(response.text) > 500 else response.text
+                logger.debug(f"Response: {response.status_code} {response_summary}")
+                
+                # Check for specific status codes that warrant a retry (e.g., 5xx)
+                if 500 <= response.status_code < 600:
+                     raise StagehandAPIError(
+                        message=f"API request failed with server error: {method} {request_url}",
+                        status_code=response.status_code,
+                        response_content=response.text
+                     )
+
+                response.raise_for_status() # Raise HTTPStatusError for other 4xx/5xx responses
+                if response.status_code == 204: # No content
+                    return None
+                return response.json()
+            except httpx.HTTPStatusError as e:
+                # Re-raise as StagehandAPIError for consistent handling, but don't retry 4xx here
+                logger.error(
+                    f"API request failed (non-retryable status): {e.request.method} {e.request.url} - Status: {e.response.status_code}",
+                    exc_info=True
+                )
+                raise StagehandAPIError(
+                    message=f"API call to {e.request.method} {e.request.url} failed with status {e.response.status_code}",
+                    status_code=e.response.status_code,
+                    response_content=e.response.text
+                ) from e
+            except (httpx.RequestError, httpx.TimeoutException) as e: # Covers network errors, timeouts, etc.
+                logger.warning(
+                    f"Network request failed: {method} {request_url} - Error: {type(e).__name__} - {str(e)}"
+                )
+                raise # Re-raise to be caught by tenacity
+            except StagehandAPIError as e:
+                # Raised manually for 5xx status codes, re-raise for tenacity
+                raise 
+            except Exception as e: # Catch any other unexpected errors during request processing
+                logger.exception(f"An unexpected error occurred during request to {request_url}")
+                # Wrap in StagehandError (base class) - maybe don't retry?
+                raise StagehandError(f"An unexpected error occurred: {str(e)}") from e
+        
         try:
-            response = await self.http_client.request(method, endpoint, **kwargs)
-            response.raise_for_status() # Raise HTTPStatusError for 4xx/5xx responses
-            logger.debug(f"Response: {response.status_code} {response.text}")
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                f"API request failed: {method} {request_url} - Status: {e.response.status_code} - Response: {e.response.text}",
-                exc_info=True
-            )
-            raise StagehandAPIError(
-                message=f"API call to {e.request.method} {e.request.url} failed with status {e.response.status_code}",
-                status_code=e.response.status_code,
-                response_content=e.response.text
-            ) from e
-        except httpx.RequestError as e: # Covers network errors, timeouts, etc.
-            logger.error(
-                f"Network request failed: {method} {request_url} - Error: {str(e)}", exc_info=True
-            )
-            raise StagehandAPIError(f"Network error during request to {request_url}: {str(e)}") from e
-        except Exception as e: # Catch any other unexpected errors
-            logger.error(f"An unexpected error occurred during request to {request_url}: {str(e)}", exc_info=True)
-            raise StagehandError(f"An unexpected error occurred: {str(e)}") from e
+            return await _make_request_with_retry()
+        except Exception as e:
+            # Log the final error after all retries fail
+            logger.error(f"Request failed permanently after retries: {method} {request_url} - Error: {e}")
+            # Re-raise the exception caught by tenacity or the final non-retryable error
+            raise
 
     async def create_task(self, workflow_data: Dict[str, Any]) -> Dict[str, Any]:
         """

@@ -1,0 +1,30 @@
+# Task ID: 6
+# Title: Develop PII Scrubbing Component
+# Status: done
+# Dependencies: 5
+# Priority: medium
+# Description: Create a component to identify and remove personally identifiable information (PII) from collected HTML and action data.
+# Details:
+1. Create a `pii_scrubber.py` module with PIIScrubber class
+2. Implement detection and scrubbing for common PII types:
+   - Email addresses
+   - Phone numbers
+   - Names (using NER)
+   - Addresses
+   - Account numbers
+   - Session tokens and cookies
+3. Add configuration for scrubbing levels (strict vs. permissive)
+4. Implement HTML-aware scrubbing that preserves DOM structure
+5. Add logging for scrubbed items (counts only, not values)
+
+Example usage:
+```python
+from pii_scrubber import PIIScrubber
+
+scrubber = PIIScrubber(mode="strict")
+clean_html = scrubber.clean_html(raw_html)
+clean_action = scrubber.clean_action_data(action_data)
+```
+
+# Test Strategy:
+Unit tests with synthetic data containing various PII patterns. Test HTML structure preservation after scrubbing. Benchmark performance on large HTML documents. Verify no PII leaks through in edge cases.

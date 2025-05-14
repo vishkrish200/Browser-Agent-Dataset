@@ -1,0 +1,78 @@
+# Task ID: 10
+# Title: Develop JSONL Dataset Builder
+# Status: pending
+# Dependencies: 5, 6, 7
+# Priority: high
+# Description: Create a module to transform collected and processed data into JSONL format suitable for LLM fine-tuning.
+# Details:
+1. Create a `dataset_builder.py` module with DatasetBuilder class
+2. Implement JSONL generation:
+   - Format: `<DOM>...HTML content...</DOM><ACTION>click #selector</ACTION>`
+   - Optional image format: Include `<IMAGE>s3://path/to/image.webp</IMAGE>`
+3. Add filtering options:
+   - By site/domain
+   - By workflow type
+   - By action type
+   - By success/failure
+4. Implement train/validation split functionality
+5. Add dataset statistics generation
+
+Example usage:
+```python
+from dataset_builder import DatasetBuilder
+
+builder = DatasetBuilder()
+builder.build_dataset(
+    input_path="s3://checkpoints/",
+    output_path="./datasets/",
+    include_images=True,
+    train_split=0.9
+)
+```
+
+# Test Strategy:
+Unit tests for JSONL formatting and dataset building logic. Test with sample data to verify output format. Verify train/validation splits work correctly. Test statistics generation for accuracy.
+
+# Subtasks:
+## 1. Set up modular project structure [pending]
+### Dependencies: None
+### Description: Create a modular project structure with separate components for data processing, transformation, and analysis
+### Details:
+Implement a modular design pattern following data engineering best practices. Create separate modules for each functional component with clear interfaces between them. Set up version control for tracking schema changes and code evolution.
+
+## 2. Implement JSONL formatting module [pending]
+### Dependencies: 10.1
+### Description: Develop a module to handle JSONL data formatting and validation
+### Details:
+Create functions to parse, validate, and format data in JSONL format. Implement schema validation to ensure data consistency and quality. Include error handling for malformed JSON entries.
+
+## 3. Build data filtering component [pending]
+### Dependencies: 10.2
+### Description: Create a component to filter data based on specified criteria
+### Details:
+Develop filtering logic with configurable parameters. Implement both inclusive and exclusive filtering capabilities. Ensure the component can handle large datasets efficiently through streaming or batch processing.
+
+## 4. Develop data splitting functionality [pending]
+### Dependencies: 10.3
+### Description: Create functionality to split datasets into training, validation, and test sets
+### Details:
+Implement methods for random, stratified, and time-based splitting. Ensure reproducibility by supporting seed values. Add options for customizing split ratios and maintaining data distribution characteristics.
+
+## 5. Create statistical analysis module [pending]
+### Dependencies: 10.2
+### Description: Develop a module for calculating and reporting dataset statistics
+### Details:
+Implement functions to calculate descriptive statistics, identify outliers, and analyze data distributions. Create visualization capabilities for key metrics. Design the module to work efficiently with large datasets.
+
+## 6. Build image processing handler [pending]
+### Dependencies: 10.1
+### Description: Develop functionality for processing and transforming image data
+### Details:
+Create components for image loading, resizing, normalization, and augmentation. Implement efficient storage and retrieval mechanisms for image data. Ensure compatibility with common image formats and integration with the JSONL data structure.
+
+## 7. Implement comprehensive testing framework [pending]
+### Dependencies: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6
+### Description: Create a testing framework for validating all components
+### Details:
+Develop unit tests for each module and integration tests for the complete pipeline. Implement data quality checks and performance benchmarks. Create automated test workflows to ensure ongoing code quality and functionality.
+

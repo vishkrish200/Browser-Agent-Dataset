@@ -13,3 +13,11 @@ src/browserbase_client.egg-info/SOURCES.txt
 src/browserbase_client.egg-info/dependency_links.txt
 src/browserbase_client.egg-info/requires.txt
 src/browserbase_client.egg-info/top_level.txt
+src/stagehand_client/__init__.py
+src/stagehand_client/auth.py
+src/stagehand_client/client.py
+src/stagehand_client/config.py
+src/stagehand_client/exceptions.py
+src/stagehand_client/types.py
+src/stagehand_client/utils.py
+src/stagehand_client/workflow.py

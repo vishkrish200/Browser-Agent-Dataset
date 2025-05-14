@@ -1,0 +1,32 @@
+# Task ID: 7
+# Title: Implement HTML Processing Utilities
+# Status: pending
+# Dependencies: 5
+# Priority: medium
+# Description: Develop utilities for HTML minification, gzipping, and DOM diffing to optimize dataset size and quality.
+# Details:
+1. Create an `html_processor.py` module with HTMLProcessor class
+2. Implement HTML minification:
+   - Remove comments
+   - Remove unnecessary whitespace
+   - Optimize attribute quotes
+3. Implement gzip compression with appropriate level
+4. Create DOM diffing utility:
+   - Compare consecutive HTML snapshots
+   - Identify meaningful changes vs. noise
+   - Filter out no-op steps
+5. Add token length capping to prevent oversized examples
+
+Example usage:
+```python
+from html_processor import HTMLProcessor
+
+processor = HTMLProcessor()
+minified_html = processor.minify(html)
+compressed_data = processor.gzip_compress(minified_html)
+is_significant_change = processor.is_significant_dom_change(previous_html, current_html)
+truncated_html = processor.cap_token_length(html, max_tokens=8192)
+```
+
+# Test Strategy:
+Unit tests for each processing function. Measure compression ratios on sample HTML. Test DOM diffing with various change scenarios. Verify token length capping works correctly with different HTML structures.

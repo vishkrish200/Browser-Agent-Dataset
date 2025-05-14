@@ -126,38 +126,6 @@
           ],
           "details": "Ensure test coverage for authentication, session management, proxy configuration, error handling, logging, and configuration. Use mocks and stubs for external dependencies.\n<info added on 2025-05-11T11:19:10.469Z>\nEnsure test coverage for authentication, session management, proxy configuration, error handling, logging, and configuration. Use mocks and stubs for external dependencies.\n\nUnit Testing Implementation Plan:\n\n1. Add test dependencies to requirements.txt:\n   - pytest\n   - pytest-asyncio (for testing async code)\n   - respx (for mocking httpx requests)\n   - pytest-cov (for coverage reporting)\n\n2. Create test directory structure in tests/browserbase_client/:\n   - test_config.py: For configuration loading logic tests\n   - test_auth.py: For authentication strategies tests\n   - test_client.py: For BrowserbaseClient methods and error handling\n   - conftest.py: For shared pytest fixtures\n\n3. Configuration Tests (test_config.py):\n   - Test API key retrieval from different sources\n   - Test base URL resolution logic\n   - Test timeout settings validation\n   - Use unittest.mock.patch.dict for environment variable simulation\n\n4. Authentication Tests (test_auth.py):\n   - Test ApiKeyAuth class initialization\n   - Verify correct auth header generation\n   - Test error handling for invalid/empty API keys\n\n5. Client Tests (test_client.py):\n   - Test client initialization with various parameter combinations\n   - Test all API methods (create_session, list_sessions, get_session, release_session)\n   - Test success cases with mocked 2xx responses\n   - Test API error handling with mocked 4xx/5xx responses\n   - Test network error handling\n   - Verify correct parameter passing in requests\n   - Test logging functionality using caplog fixture\n\n6. Test Execution:\n   - Run tests with pytest tests/browserbase_client\n   - Configure pytest settings in pyproject.toml or pytest.ini\n   - Generate coverage reports to ensure comprehensive test coverage\n</info added on 2025-05-11T11:19:10.469Z>\n<info added on 2025-05-11T11:25:49.714Z>\nInitial test implementation progress:\n\n1. Created the following test files:\n   - `test_config.py`: Tests for configuration loading logic\n   - `test_auth.py`: Tests for authentication strategies\n   - `test_client.py`: Tests for BrowserbaseClient methods\n   - `conftest.py`: Shared pytest fixtures\n\n2. Implemented basic tests for:\n   - Configuration loading and validation\n   - Authentication header generation\n   - Client initialization with various parameters\n   - API methods:\n     - create_session\n     - list_sessions\n     - get_session\n     - release_session\n\n3. Used pytest and respx for request mocking\n\nNext steps:\n1. Verify test dependencies in requirements.txt:\n   - pytest\n   - pytest-asyncio\n   - respx\n   - pytest-cov\n\n2. Run the initial test suite with:\n   ```\n   pytest tests/browserbase_client\n   ```\n\n3. Set up coverage reporting:\n   - Add coverage configuration to pyproject.toml or .coveragerc\n   - Run tests with coverage: `pytest --cov=browserbase_client tests/`\n   - Review coverage report to identify gaps in test coverage\n\n4. Expand test cases to include:\n   - Edge cases and error conditions\n   - Integration tests with actual API responses\n   - Logging verification\n</info added on 2025-05-11T11:25:49.714Z>\n<info added on 2025-05-11T11:55:41.769Z>\nUnit testing progress update:\n\n1. Successfully implemented and executed initial unit tests:\n   - Created test modules for config, auth, and client components\n   - All 24 tests are now passing\n   - Resolved several implementation issues:\n     - Fixed import path problems\n     - Corrected TypedDict usage errors\n     - Addressed test logic errors\n\n2. Development environment setup:\n   - Created virtual environment (.venv) for isolated testing\n   - Installed all test dependencies:\n     - pytest\n     - pytest-asyncio\n     - respx\n     - pytest-cov\n   - Made package installable with pyproject.toml configuration\n   - Installed package in editable mode for development\n\n3. Current test coverage:\n   - Basic functionality tests for configuration loading\n   - Authentication header generation tests\n   - Client initialization with various parameter combinations\n   - API method tests for session management\n\n4. Next steps:\n   - Set up code coverage reporting with pytest-cov\n   - Run coverage analysis to identify untested code paths\n   - Add tests for edge cases and error handling scenarios\n   - Implement integration tests with mock API responses\n   - Document test procedures in README.md\n\nThe test suite provides validation for the core functionality of the Browserbase API client, ensuring reliability and correctness of the implementation.\n</info added on 2025-05-11T11:55:41.769Z>\n<info added on 2025-05-11T11:56:27.942Z>\nTest coverage analysis completed with excellent results:\n\n1. Overall test coverage: 93%\n   - auth.py: 93% (1 line missed)\n   - client.py: 89% (4 lines missed, 4 partial branches)\n   - config.py: 95% (2 lines missed)\n   - exceptions.py: 88% (2 partial branches)\n\n2. Testing infrastructure:\n   - Successfully configured pytest and coverage settings in pyproject.toml\n   - Implemented comprehensive test suite covering all major components\n   - Verified functionality across all API methods and configuration options\n\n3. Coverage analysis:\n   - Most critical code paths are well-covered\n   - Remaining uncovered lines primarily represent edge cases or error handling paths\n   - Partial branch coverage in exceptions.py relates to specific error conditions that are difficult to trigger in tests\n\n4. Next steps:\n   - Review uncovered lines in client.py to determine if additional tests are needed\n   - Consider adding tests for the missed line in auth.py\n   - Evaluate if current coverage level (93%) is sufficient for this stage of development\n   - If deemed sufficient, mark this subtask as complete\n   - Otherwise, implement additional tests targeting the identified gaps\n\nThe test suite now provides strong validation for the Browserbase API client implementation, ensuring reliability and correctness across the codebase.\n</info added on 2025-05-11T11:56:27.942Z>",
           "status": "done"
-        },
-        {
-          "id": 9,
-          "title": "Implement GET /sessions/{id}/live endpoint (Session Live URLs)",
-          "description": "Add a method to the BrowserbaseClient to retrieve live URLs for an active session, corresponding to the GET /v1/sessions/{id}/live API endpoint.",
-          "details": "This will involve adding an async method `get_session_live_urls(self, session_id: str) -> dict` to `client.py`. It should make a GET request to `/v1/sessions/{session_id}/live` and return the JSON response.\n<info added on 2025-05-13T15:17:14.340Z>\nThis will involve adding an async method `get_session_live_urls(self, session_id: str) -> dict` to `client.py`. It should make a GET request to `/v1/sessions/{session_id}/live` and return the JSON response.\n\nImplementation Plan:\n\n1. Modify `src/browserbase_client/client.py`:\n   - Add a new asynchronous method `async def get_session_live_urls(self, session_id: str) -> dict:` to the `BrowserbaseClient` class\n   - Construct the URL using `{self.base_url}/sessions/{session_id}/live`\n   - Execute the request using `await self._request(\"GET\", url)`\n   - Include a comprehensive docstring explaining the method's purpose, parameters, return value, and possible exceptions\n   - Return the JSON response from the API\n\n2. Update test suite in `tests/browserbase_client/test_client.py`:\n   - Create a new async test method `async def test_get_session_live_urls(self, client, respx_mock):`\n   - Mock the API endpoint using `respx_mock.get(...)` with a sample response containing live URLs (e.g., `{\"debug\": \"wss://...\", \"vnc\": \"wss://...\"}`)\n   - Call the method with a test session ID and verify the response matches expectations\n   - Add error handling test cases (e.g., 404 Not Found for non-existent sessions)\n\n3. No changes needed for `src/browserbase_client/__init__.py` as the client class is already exported\n\n4. For typing, continue using `dict` as the return type for now. If the response structure becomes more complex in the future, consider adding a `TypedDict` in `src/browserbase_client/types.py`\n</info added on 2025-05-13T15:17:14.340Z>",
-          "status": "done",
-          "dependencies": [
-            "2.1",
-            "2.2",
-            "2.3",
-            "2.5",
-            "2.6",
-            "2.7"
-          ],
-          "parentTaskId": 2
-        },
-        {
-          "id": 10,
-          "title": "Implement GET /sessions/{id}/downloads endpoint (Session Downloads)",
-          "description": "Add a method to the BrowserbaseClient to retrieve a list of files available for download from a session, corresponding to the GET /v1/sessions/{id}/downloads API endpoint.",
-          "details": "This will involve adding an async method `get_session_downloads(self, session_id: str) -> dict` to `client.py`. It should make a GET request to `/v1/sessions/{session_id}/downloads` and return the JSON response. Unit tests should also be added.\n<info added on 2025-05-13T15:55:25.286Z>\nThis will involve adding an async method `get_session_downloads(self, session_id: str) -> dict` to `client.py`. It should make a GET request to `/v1/sessions/{session_id}/downloads` and return the JSON response. Unit tests should also be added.\n\nImplementation Plan:\n\n1. Modify `src/browserbase_client/client.py`:\n   - Add a new asynchronous method `async def get_session_downloads(self, session_id: str) -> dict:` to the `BrowserbaseClient` class.\n   - This method will construct the URL: `{self.base_url}/sessions/{session_id}/downloads`.\n   - It will call `await self._request(\"GET\", url)` to execute the request.\n   - Include a docstring explaining its purpose, parameters, return value, and possible exceptions.\n   - The method should raise a `ValueError` if `session_id` is not provided.\n\n2. Modify `tests/browserbase_client/test_client.py`:\n   - Add new asynchronous test methods for `get_session_downloads`:\n     - `test_get_session_downloads_success`: Mock a 200 response with a sample JSON payload (e.g., a list of download items).\n     - `test_get_session_downloads_not_found`: Mock a 404 error.\n     - `test_get_session_downloads_server_error`: Mock a 500 error.\n     - `test_get_session_downloads_no_session_id`: Test `ValueError` when `session_id` is empty.\n\n3. Update `src/browserbase_client/types.py` (Optional for now):\n   - If the API response for downloads has a clear and consistent structure for each item, consider adding `TypedDict` definitions for better type safety (e.g., `DownloadItemDict`).\n   - For this iteration, returning `dict` from `get_session_downloads` is acceptable.\n</info added on 2025-05-13T15:55:25.286Z>",
-          "status": "done",
-          "dependencies": [
-            "2.1",
-            "2.2",
-            "2.3",
-            "2.5",
-            "2.6",
-            "2.7"
-          ],
-          "parentTaskId": 2
         }
       ]
     },
@@ -275,105 +243,8 @@
         2,
         3
       ],
-      "status": "done",
-      "subtasks": [
-        {
-          "id": 1,
-          "title": "Design Session Management System",
-          "description": "Create a robust session management system that handles user sessions, authentication, and maintains state across service interactions.",
-          "dependencies": [],
-          "details": "Implement session creation, validation, and expiration mechanisms. Design data structures to store session information including user context, authentication tokens, and session state. Create APIs for session initialization, retrieval, and termination. Ensure thread-safety for concurrent session access.\n<info added on 2025-05-12T15:26:52.761Z>\nThe session management system should be implemented in the Orchestrator class with the following components:\n\n1. Core Session Management:\n   - Create a Session class to represent session data structure\n   - Implement thread-safe session tracking using a dictionary (_active_sessions) and lock mechanism (_session_lock)\n   - Develop methods for session creation, retrieval, and termination\n   - Add proper error handling for session operations\n\n2. External Service Integration:\n   - Initialize BrowserbaseClient and StagehandClient with proper configuration\n   - Implement _create_browserbase_session method to establish browser sessions\n   - Implement _release_browserbase_session method to properly clean up resources\n   - Handle API errors and connection issues gracefully\n\n3. Session State Management:\n   - Track session state including user context and authentication tokens\n   - Provide helper methods like get_session_info and list_active_sessions\n   - Implement proper logging throughout the session lifecycle\n   - Ensure thread-safety for concurrent session access\n\n4. API Design:\n   - Create clear interfaces for session initialization, retrieval, and termination\n   - Design the system to support the upcoming task execution flow (Subtask 4.2)\n   - Structure code in src/orchestrator.py with proper module exports via src/__init__.py\n</info added on 2025-05-12T15:26:52.761Z>",
-          "status": "done"
-        },
-        {
-          "id": 2,
-          "title": "Implement Task Execution Flow",
-          "description": "Develop the core task execution pipeline that coordinates task scheduling, execution, and result handling across Browserbase and Stagehand services.",
-          "dependencies": [
-            1
-          ],
-          "details": "Create a task queue system with priority handling. Implement task serialization/deserialization. Design execution strategies for parallel and sequential task processing. Develop mechanisms for task cancellation and timeout handling. Create interfaces for task submission, status checking, and result retrieval.",
-          "status": "done"
-        },
-        {
-          "id": 3,
-          "title": "Build Service Integration Layer",
-          "description": "Create adapters and interfaces to integrate with Browserbase and Stagehand services, handling communication protocols and data transformation.",
-          "dependencies": [
-            1,
-            2
-          ],
-          "details": "Implement service client libraries for Browserbase and Stagehand. Create data mappers for transforming between service-specific and orchestration-level data models. Implement retry logic and circuit breakers for service calls. Design asynchronous communication patterns for non-blocking operations.",
-          "status": "done"
-        },
-        {
-          "id": 4,
-          "title": "Develop Configuration Management System",
-          "description": "Create a flexible configuration system that supports environment-specific settings, feature flags, and runtime configuration updates.",
-          "dependencies": [],
-          "details": "Implement a hierarchical configuration structure with defaults and overrides. Support configuration from multiple sources (files, environment variables, database). Create APIs for runtime configuration updates. Implement configuration validation and schema enforcement. Design caching mechanisms for configuration access optimization.\n<info added on 2025-05-12T17:28:18.424Z>\nImplement a hierarchical configuration structure with defaults and overrides. Support configuration from multiple sources (files, environment variables, database). Create APIs for runtime configuration updates. Implement configuration validation and schema enforcement. Design caching mechanisms for configuration access optimization.\n\nAfter reviewing the existing configuration handling for MVP, we've determined that the current approach already meets the core requirements without needing additional complexity:\n\n1. The Orchestrator constructor accepts optional configuration parameters including keys, URLs, and timeouts\n2. These parameters are properly passed down to dependent components (BrowserbaseClient and StagehandClient initializers)\n3. Client configuration modules (src/*/config.py) implement a clear resolution precedence:\n   - Direct parameters take highest priority\n   - Environment variables are used as fallback\n   - Default values are used when neither of the above is provided\n\nThis implementation provides the necessary hierarchical configuration structure with appropriate defaults and overrides. The current system is sufficient for the MVP stage without requiring more complex features like dedicated configuration files or runtime updates. No code changes are needed for this subtask as the existing implementation satisfies the requirements.\n</info added on 2025-05-12T17:28:18.424Z>",
-          "status": "done"
-        },
-        {
-          "id": 5,
-          "title": "Implement Error Handling and Recovery",
-          "description": "Design comprehensive error handling strategies including detection, logging, recovery mechanisms, and graceful degradation.",
-          "dependencies": [
-            2,
-            3
-          ],
-          "details": "Create an error classification system. Implement structured logging with context preservation. Design recovery strategies for different error types. Implement circuit breakers and fallback mechanisms. Create error reporting APIs and dashboards. Develop automatic retry policies with exponential backoff.\n<info added on 2025-05-12T17:34:02.979Z>\nCreate an error classification system. Implement structured logging with context preservation. Design recovery strategies for different error types. Implement circuit breakers and fallback mechanisms. Create error reporting APIs and dashboards. Develop automatic retry policies with exponential backoff.\n\nRefactored Orchestrator class to improve error handling and logging:\n- Restructured class hierarchy by moving run_workflow method and custom exceptions (OrchestratorError, SessionCreationError, TaskCreationError, TaskExecutionError) into the Orchestrator class\n- Implemented proper exception hierarchy with Orchestrator-specific exceptions being raised using self-referencing (e.g., self.TaskCreationError)\n- Enhanced session management with robust tracking of created sessions and guaranteed release attempts in finally blocks\n- Added error prioritization logic to prevent session cleanup errors from masking critical workflow execution errors\n- Implemented contextual logging with detailed information for different operational stages (session provisioning, task creation, task execution)\n- Added traceability improvements through enriched error context and structured logging patterns\n</info added on 2025-05-12T17:34:02.979Z>",
-          "status": "done"
-        },
-        {
-          "id": 6,
-          "title": "Build Resource Management System",
-          "description": "Implement resource allocation, tracking, and cleanup mechanisms to ensure efficient utilization and prevent leaks.",
-          "dependencies": [
-            2,
-            3
-          ],
-          "details": "Design resource pooling for connections and heavy objects. Implement resource usage tracking and metrics collection. Create cleanup mechanisms with graceful shutdown. Implement resource allocation strategies with prioritization. Design resource throttling and quota enforcement mechanisms.\n<info added on 2025-05-12T18:47:08.104Z>\nDesign resource pooling for connections and heavy objects. Implement resource usage tracking and metrics collection. Create cleanup mechanisms with graceful shutdown. Implement resource allocation strategies with prioritization. Design resource throttling and quota enforcement mechanisms.\n\nFor the MVP implementation, we've identified that the primary resource requiring management is the Browserbase session. The current Orchestrator implementation already handles the essential resource lifecycle:\n\n1. Allocation: The `_create_browserbase_session` method successfully handles session creation.\n2. Tracking: Active sessions are tracked in the `_active_sessions` dictionary within the Orchestrator class, with proper lock management to ensure thread safety.\n3. Cleanup: The `_release_browserbase_session` method is called reliably for all successfully created sessions within the `finally` block of the `run_workflow` method, ensuring proper resource cleanup.\n\nThis implementation covers the core requirements for the MVP. The more advanced features originally specified (connection pooling, detailed metrics collection, throttling mechanisms, and quota enforcement) have been deferred as they are not necessary for the initial release. No additional code changes are needed for this subtask at this time.\n</info added on 2025-05-12T18:47:08.104Z>",
-          "status": "done"
-        },
-        {
-          "id": 7,
-          "title": "Develop Monitoring and Observability",
-          "description": "Create comprehensive monitoring, metrics collection, and observability features to track system health and performance.",
-          "dependencies": [
-            2,
-            5,
-            6
-          ],
-          "details": "Implement metrics collection for key performance indicators. Create health check endpoints and probes. Design distributed tracing across service boundaries. Implement alerting mechanisms for critical issues. Create dashboards for system visibility. Design audit logging for security and compliance.\n<info added on 2025-05-14T07:39:51.724Z>\nImplement metrics collection for key performance indicators. Create health check endpoints and probes. Design distributed tracing across service boundaries. Implement alerting mechanisms for critical issues. Create dashboards for system visibility. Design audit logging for security and compliance.\n\nEnhanced Logging Implementation Plan for MVP:\n\n1. Review and enhance logging in src/orchestrator.py:\n   - Add structured logging for key operational events including session creation/release, task creation/execution\n   - Include consistent identifiers (project_id, session_id, stagehand_task_id, stagehand_execution_id, workflow_name) in all relevant log messages\n   - Ensure all critical paths have appropriate logging coverage\n\n2. Standardize log format for improved parsing and readability:\n   - Maintain consistent use of logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')\n   - Structure operational log messages with key-value pairs: \"Action: <action>, Status: <status>, Workflow: <name>, SessionID: <id>, TaskID: <id>, Details: <...>\"\n   - Ensure machine-parseable format for automated log analysis\n\n3. Implement audit-worthy logging for key operations:\n   - Log run_workflow initiation with input parameters\n   - Log session creation/release operations with results\n   - Log Stagehand task creation and execution results\n   - Capture all significant errors with stack traces and contextual information\n\n4. Apply appropriate log levels throughout the codebase:\n   - INFO: Standard operational milestones\n   - DEBUG: Verbose development information\n   - WARNING: Recoverable issues\n   - ERROR: Non-recoverable operation failures\n   - CRITICAL: System-threatening conditions\n\n5. Update src/orchestrator.py methods:\n   - Enhance logging in __init__, _create_browserbase_session, _release_browserbase_session, run_workflow, and close methods\n   - Ensure consistent logging patterns across all methods\n</info added on 2025-05-14T07:39:51.724Z>",
-          "status": "done"
-        },
-        {
-          "id": 8,
-          "title": "Implement Testing Framework",
-          "description": "Develop comprehensive testing infrastructure including unit tests, integration tests, and end-to-end tests for the orchestration service.",
-          "dependencies": [
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7
-          ],
-          "details": "Create unit test suites for core components. Implement integration test framework with service mocks. Design end-to-end test scenarios covering critical paths. Implement performance and load testing infrastructure. Create test data generators and fixtures. Design continuous integration pipeline for automated testing.\n<info added on 2025-05-14T07:42:45.710Z>\nCreate unit test suites for core components. Implement integration test framework with service mocks. Design end-to-end test scenarios covering critical paths. Implement performance and load testing infrastructure. Create test data generators and fixtures. Design continuous integration pipeline for automated testing.\n\nImplementation plan for Orchestrator Testing with MVP focus:\n\n1. Set up Test Structure:\n   - Create and organize tests in the `tests/orchestrator/` directory\n   - Ensure `test_orchestrator.py` exists for main test cases\n   - Implement `conftest.py` for orchestrator-specific fixtures\n\n2. Develop Core Test Fixtures:\n   - `mock_browserbase_client`: AsyncMock of BrowserbaseClient\n   - `mock_stagehand_client`: AsyncMock of StagehandClient\n   - `orchestrator_instance`: Orchestrator initialized with mock clients\n   - `sample_workflow_builder`: WorkflowBuilder with valid workflow definition\n   - `sample_project_id`: String for browserbase_project_id\n\n3. Implement Unit/Integration Tests for Orchestrator.run_workflow:\n   - Successful execution tests (single and multiple sessions)\n   - Stagehand task creation failure tests\n   - Browserbase session creation failure tests (complete and partial)\n   - Stagehand task execution failure tests\n   - Browserbase session release failure tests\n   - Verify proper error handling and result reporting in all scenarios\n\n4. Refine Orchestrator Implementation:\n   - Address issues and improvements identified during test development\n   - Ensure robust error handling for all API interactions\n   - Implement proper cleanup of resources even in failure scenarios\n\n5. Additional Unit Tests (Optional for MVP):\n   - Test helper methods like _create_browserbase_session and _release_browserbase_session\n   - Add more granular tests as orchestrator complexity increases\n\nEach test case should verify both the correct behavior of the orchestrator and proper interaction with dependent services through the mock clients.\n</info added on 2025-05-14T07:42:45.710Z>",
-          "status": "done"
-        },
-        {
-          "id": 9,
-          "title": "Implement Basic Health Check Endpoint",
-          "description": "Add a basic /health HTTP endpoint to the Orchestration Service to indicate its operational status.",
-          "details": "1. Ensure `src/orchestrator.py` exists with an `Orchestrator` class. 2. Set up a lightweight async web server (e.g., using `aiohttp` or `FastAPI`) within the orchestrator's context. 3. Implement a `/health` route that returns a 200 OK with `{\"status\": \"healthy\"}`. 4. Add `aiohttp` or `fastapi` to `requirements.txt`.\n<info added on 2025-05-13T15:57:31.740Z>\n1. Create `src/orchestrator.py` (if it doesn't exist):\n   - Define a basic `Orchestrator` class.\n\n2. Update `requirements.txt`:\n   - Add `fastapi`\n   - Add `uvicorn[standard]` (for the web server)\n\n3. Modify `src/orchestrator.py`:\n   - Import `FastAPI` from `fastapi` and `uvicorn`.\n   - Create a FastAPI application instance: `app = FastAPI()`.\n   - Define an async function for the `/health` GET endpoint:\n     ```python\n     @app.get(\"/health\")\n     async def health_check():\n         return {\"status\": \"healthy\"}\n     ```\n   - (Optional for now, can be a separate task) Add a method to the `Orchestrator` class like `start_api_server(self, host=\"0.0.0.0\", port=8000)` that would use `uvicorn.run(app, host=host, port=port)`.\n   - For initial standalone testing, a `if __name__ == \"__main__\":` block can be added to directly run `uvicorn.run(app, host=\"0.0.0.0\", port=8000)`.\n\n4. Create `tests/orchestrator/test_orchestrator.py` (if it doesn't exist):\n   - Add a basic test using `httpx` and `fastapi.testclient.TestClient` to check if the `/health` endpoint returns a 200 status and `{\"status\": \"healthy\"}`.\n   - Ensure `tests/orchestrator/__init__.py` exists.\n\n5. Update `src/__init__.py`:\n   - If `Orchestrator` class is created, export it from `src/__init__.py`\n</info added on 2025-05-13T15:57:31.740Z>",
-          "status": "done",
-          "dependencies": [],
-          "parentTaskId": 4
-        }
-      ]
+      "status": "pending",
+      "subtasks": []
     },
     {
       "id": 5,
@@ -387,15 +258,15 @@
         3,
         4
       ],
-      "status": "done",
+      "status": "pending",
       "subtasks": [
         {
           "id": 1,
           "title": "Module Structure Setup",
           "description": "Design and scaffold the core module structure to support extensibility and maintainability.",
           "dependencies": [],
-          "details": "Define directories, base classes, and interfaces for session, collection, S3 integration, and configuration components.\n<info added on 2025-05-14T15:17:47.675Z>\nDefine directories, base classes, and interfaces for session, collection, S3 integration, and configuration components.\n\nThe DataCollector module will be structured as follows:\n\n1. Core Responsibilities:\n   - Orchestrate per-step data collection (HTML, screenshot, action metadata)\n   - Interface with BrowserbaseClient and StagehandClient\n   - Interface with storage components (S3/local)\n   - Generate unique step IDs for data tracking\n\n2. File Structure (src/data_collector/):\n   - __init__.py: Export DataCollector, StepData, and DataCollectionError\n   - collector.py: Main DataCollector class implementation\n   - config.py: Configuration definitions for data types and storage options\n   - exceptions.py: Custom error classes (DataCollectionError, StorageError)\n   - types.py: TypedDict definitions for StepData and storage configurations\n   - storage.py: Abstract StorageBackend class with S3Storage and LocalStorage implementations\n\n3. DataCollector Class Design:\n   - Constructor accepting storage configuration and client instances\n   - Methods for Browserbase session recording configuration\n   - Step data collection method handling HTML, screenshots, and metadata\n   - Helper methods for ID generation and data processing\n\n4. Data Types:\n   - StepData TypedDict with fields for IDs, timestamps, URLs, and artifact paths\n   - StorageConfig TypedDict for configuring storage backends\n\n5. Initial Implementation Files:\n   - Create all module files with skeleton implementations\n   - Set up corresponding test directory structure\n</info added on 2025-05-14T15:17:47.675Z>",
-          "status": "done"
+          "details": "Define directories, base classes, and interfaces for session, collection, S3 integration, and configuration components.",
+          "status": "pending"
         },
         {
           "id": 2,
@@ -405,7 +276,7 @@
             1
           ],
           "details": "Implement session management using best practices such as automatic driver configuration and support for multiple browsers.",
-          "status": "done"
+          "status": "pending"
         },
         {
           "id": 3,
@@ -415,7 +286,7 @@
             2
           ],
           "details": "Ensure robust element location, error handling, and support for multiple data types as per automation best practices.",
-          "status": "done"
+          "status": "pending"
         },
         {
           "id": 4,
@@ -425,7 +296,7 @@
             1
           ],
           "details": "Support authentication, bucket management, and efficient data transfer operations.",
-          "status": "done"
+          "status": "pending"
         },
         {
           "id": 5,
@@ -436,7 +307,7 @@
             4
           ],
           "details": "Ensure data integrity, efficient batching, and error reporting during uploads.",
-          "status": "done"
+          "status": "pending"
         },
         {
           "id": 6,
@@ -446,7 +317,7 @@
             4
           ],
           "details": "Support selective downloads, versioning, and error handling.",
-          "status": "done"
+          "status": "pending"
         },
         {
           "id": 7,
@@ -457,7 +328,7 @@
             6
           ],
           "details": "Incorporate exponential backoff, logging, and configurable retry limits.",
-          "status": "done"
+          "status": "pending"
         },
         {
           "id": 8,
@@ -467,7 +338,7 @@
             1
           ],
           "details": "Support environment variables, config files, and runtime overrides for session, S3, and retry settings.",
-          "status": "done"
+          "status": "pending"
         },
         {
           "id": 9,
@@ -483,7 +354,7 @@
             8
           ],
           "details": "Ensure correctness, reliability, and maintainability through automated and manual testing strategies.",
-          "status": "done"
+          "status": "pending"
         }
       ]
     },
@@ -497,7 +368,7 @@
       "dependencies": [
         5
       ],
-      "status": "done",
+      "status": "pending",
       "subtasks": []
     },
     {
@@ -524,15 +395,15 @@
         3,
         4
       ],
-      "status": "done",
+      "status": "pending",
       "subtasks": [
         {
           "id": 1,
           "title": "Module Setup and Architecture Design",
           "description": "Set up the project structure and design the overall architecture for the workflow system.",
           "dependencies": [],
-          "details": "Create the initial project structure, define module interfaces, establish coding standards, and design the core architecture that will support workflow primitives and execution.\n<info added on 2025-05-14T07:58:42.170Z>\nThis subtask involves establishing the foundation for the Workflow Definition System by creating the initial project structure and designing the core architecture.\n\nKey implementation details:\n\n1. Core Responsibility:\n   - Create a Pythonic interface for defining web interaction sequences\n   - Generate data structures compatible with stagehand_client.create_task(payload)\n   - Implement WorkflowBuilder as the central class\n\n2. File Structure (src/workflow_system/):\n   - __init__.py: Export WorkflowBuilder\n   - builder.py: Implement WorkflowBuilder class\n   - actions.py/primitives.py: Define constants for Stagehand action types\n   - exceptions.py: Custom exception classes\n\n3. WorkflowBuilder Class Design:\n   - Constructor: Initialize with workflow name and empty steps list\n   - Action Methods: Chainable methods (navigate, click, type_text, etc.)\n   - Build Method: Generate final payload for stagehand_client\n\n4. Action Dictionary Structure:\n   - Each builder method will construct dictionaries matching Stagehand's expected schema\n   - Example format: {\"type\": \"action\", \"actionType\": \"click\", \"selector\": \"...\"}\n\n5. Initial Files to Create:\n   - src/workflow_system/__init__.py\n   - src/workflow_system/builder.py\n   - src/workflow_system/exceptions.py\n   - tests/workflow_system/__init__.py\n   - tests/workflow_system/test_builder.py\n\n6. StagehandClient Interface:\n   - Ensure WorkflowBuilder.build() produces valid payload for stagehand_client.create_task()\n   - Expected structure: {\"name\": str, \"steps\": List[Dict]}\n</info added on 2025-05-14T07:58:42.170Z>",
-          "status": "done"
+          "details": "Create the initial project structure, define module interfaces, establish coding standards, and design the core architecture that will support workflow primitives and execution.",
+          "status": "pending"
         },
         {
           "id": 2,
@@ -542,7 +413,7 @@
             1
           ],
           "details": "Create the basic workflow elements such as tasks, transitions, conditions, and actions that will serve as the foundation for building complex workflows.",
-          "status": "done"
+          "status": "pending"
         },
         {
           "id": 3,
@@ -552,7 +423,7 @@
             2
           ],
           "details": "Implement a builder pattern or similar interface that allows users to construct workflows by chaining primitive operations in a readable and maintainable way.",
-          "status": "done"
+          "status": "pending"
         },
         {
           "id": 4,
@@ -562,7 +433,7 @@
             3
           ],
           "details": "Build several example workflows of varying complexity to showcase the system's features and provide templates for users to adapt to their needs.",
-          "status": "done"
+          "status": "pending"
         },
         {
           "id": 5,
@@ -573,7 +444,7 @@
             3
           ],
           "details": "Develop validation mechanisms to check for common workflow errors such as cycles, unreachable states, and missing transitions before execution.",
-          "status": "done"
+          "status": "pending"
         },
         {
           "id": 6,
@@ -584,7 +455,7 @@
             5
           ],
           "details": "Create debugging features including step-by-step execution, state inspection, breakpoints, and logging to help users identify and fix problems in their workflows.",
-          "status": "done"
+          "status": "pending"
         },
         {
           "id": 7,
@@ -598,7 +469,7 @@
             6
           ],
           "details": "Develop user guides, API documentation, tutorials, and best practices to help users effectively utilize the workflow system and its debugging capabilities.",
-          "status": "done"
+          "status": "pending"
         },
         {
           "id": 8,
@@ -610,7 +481,7 @@
             6
           ],
           "details": "Create unit tests, integration tests, and performance tests to ensure the reliability and efficiency of the workflow system under various conditions and use cases.",
-          "status": "done"
+          "status": "pending"
         }
       ]
     },

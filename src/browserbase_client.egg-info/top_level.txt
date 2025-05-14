@@ -1,1 +1,2 @@
 browserbase_client
+stagehand_client

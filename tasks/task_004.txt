@@ -1,0 +1,247 @@
+# Task ID: 4
+# Title: Develop Orchestration Service Core
+# Status: done
+# Dependencies: 2, 3
+# Priority: high
+# Description: Create the core orchestration service that coordinates between Browserbase and Stagehand to manage browser sessions and execute interaction tasks.
+# Details:
+1. Create an `orchestrator.py` module with Orchestrator class
+2. Implement session management logic:
+   - Session creation/configuration via Browserbase
+   - Task assignment to sessions
+   - Session recycling/cleanup
+3. Implement task execution flow:
+   - Task queue management (optional Redis integration)
+   - Parallel execution handling
+   - Error recovery and retry logic
+4. Add configuration options for scaling behavior
+5. Implement logging and monitoring
+
+Example usage:
+```python
+from orchestrator import Orchestrator
+from workflow_definitions import VIDEO_DISCOVERY_WORKFLOW
+
+orchestrator = Orchestrator()
+results = orchestrator.run_workflow(
+    site="youtube",
+    workflow=VIDEO_DISCOVERY_WORKFLOW,
+    sessions=5  # Run 5 parallel sessions
+)
+```
+
+# Test Strategy:
+Unit tests for orchestration logic with mocked clients. Integration test running a simple workflow end-to-end. Test parallel execution with multiple sessions. Test error handling and recovery scenarios.
+
+# Subtasks:
+## 1. Design Session Management System [done]
+### Dependencies: None
+### Description: Create a robust session management system that handles user sessions, authentication, and maintains state across service interactions.
+### Details:
+Implement session creation, validation, and expiration mechanisms. Design data structures to store session information including user context, authentication tokens, and session state. Create APIs for session initialization, retrieval, and termination. Ensure thread-safety for concurrent session access.
+<info added on 2025-05-12T15:26:52.761Z>
+The session management system should be implemented in the Orchestrator class with the following components:
+
+1. Core Session Management:
+   - Create a Session class to represent session data structure
+   - Implement thread-safe session tracking using a dictionary (_active_sessions) and lock mechanism (_session_lock)
+   - Develop methods for session creation, retrieval, and termination
+   - Add proper error handling for session operations
+
+2. External Service Integration:
+   - Initialize BrowserbaseClient and StagehandClient with proper configuration
+   - Implement _create_browserbase_session method to establish browser sessions
+   - Implement _release_browserbase_session method to properly clean up resources
+   - Handle API errors and connection issues gracefully
+
+3. Session State Management:
+   - Track session state including user context and authentication tokens
+   - Provide helper methods like get_session_info and list_active_sessions
+   - Implement proper logging throughout the session lifecycle
+   - Ensure thread-safety for concurrent session access
+
+4. API Design:
+   - Create clear interfaces for session initialization, retrieval, and termination
+   - Design the system to support the upcoming task execution flow (Subtask 4.2)
+   - Structure code in src/orchestrator.py with proper module exports via src/__init__.py
+</info added on 2025-05-12T15:26:52.761Z>
+
+## 2. Implement Task Execution Flow [done]
+### Dependencies: 4.1
+### Description: Develop the core task execution pipeline that coordinates task scheduling, execution, and result handling across Browserbase and Stagehand services.
+### Details:
+Create a task queue system with priority handling. Implement task serialization/deserialization. Design execution strategies for parallel and sequential task processing. Develop mechanisms for task cancellation and timeout handling. Create interfaces for task submission, status checking, and result retrieval.
+
+## 3. Build Service Integration Layer [done]
+### Dependencies: 4.1, 4.2
+### Description: Create adapters and interfaces to integrate with Browserbase and Stagehand services, handling communication protocols and data transformation.
+### Details:
+Implement service client libraries for Browserbase and Stagehand. Create data mappers for transforming between service-specific and orchestration-level data models. Implement retry logic and circuit breakers for service calls. Design asynchronous communication patterns for non-blocking operations.
+
+## 4. Develop Configuration Management System [done]
+### Dependencies: None
+### Description: Create a flexible configuration system that supports environment-specific settings, feature flags, and runtime configuration updates.
+### Details:
+Implement a hierarchical configuration structure with defaults and overrides. Support configuration from multiple sources (files, environment variables, database). Create APIs for runtime configuration updates. Implement configuration validation and schema enforcement. Design caching mechanisms for configuration access optimization.
+<info added on 2025-05-12T17:28:18.424Z>
+Implement a hierarchical configuration structure with defaults and overrides. Support configuration from multiple sources (files, environment variables, database). Create APIs for runtime configuration updates. Implement configuration validation and schema enforcement. Design caching mechanisms for configuration access optimization.
+
+After reviewing the existing configuration handling for MVP, we've determined that the current approach already meets the core requirements without needing additional complexity:
+
+1. The Orchestrator constructor accepts optional configuration parameters including keys, URLs, and timeouts
+2. These parameters are properly passed down to dependent components (BrowserbaseClient and StagehandClient initializers)
+3. Client configuration modules (src/*/config.py) implement a clear resolution precedence:
+   - Direct parameters take highest priority
+   - Environment variables are used as fallback
+   - Default values are used when neither of the above is provided
+
+This implementation provides the necessary hierarchical configuration structure with appropriate defaults and overrides. The current system is sufficient for the MVP stage without requiring more complex features like dedicated configuration files or runtime updates. No code changes are needed for this subtask as the existing implementation satisfies the requirements.
+</info added on 2025-05-12T17:28:18.424Z>
+
+## 5. Implement Error Handling and Recovery [done]
+### Dependencies: 4.2, 4.3
+### Description: Design comprehensive error handling strategies including detection, logging, recovery mechanisms, and graceful degradation.
+### Details:
+Create an error classification system. Implement structured logging with context preservation. Design recovery strategies for different error types. Implement circuit breakers and fallback mechanisms. Create error reporting APIs and dashboards. Develop automatic retry policies with exponential backoff.
+<info added on 2025-05-12T17:34:02.979Z>
+Create an error classification system. Implement structured logging with context preservation. Design recovery strategies for different error types. Implement circuit breakers and fallback mechanisms. Create error reporting APIs and dashboards. Develop automatic retry policies with exponential backoff.
+
+Refactored Orchestrator class to improve error handling and logging:
+- Restructured class hierarchy by moving run_workflow method and custom exceptions (OrchestratorError, SessionCreationError, TaskCreationError, TaskExecutionError) into the Orchestrator class
+- Implemented proper exception hierarchy with Orchestrator-specific exceptions being raised using self-referencing (e.g., self.TaskCreationError)
+- Enhanced session management with robust tracking of created sessions and guaranteed release attempts in finally blocks
+- Added error prioritization logic to prevent session cleanup errors from masking critical workflow execution errors
+- Implemented contextual logging with detailed information for different operational stages (session provisioning, task creation, task execution)
+- Added traceability improvements through enriched error context and structured logging patterns
+</info added on 2025-05-12T17:34:02.979Z>
+
+## 6. Build Resource Management System [done]
+### Dependencies: 4.2, 4.3
+### Description: Implement resource allocation, tracking, and cleanup mechanisms to ensure efficient utilization and prevent leaks.
+### Details:
+Design resource pooling for connections and heavy objects. Implement resource usage tracking and metrics collection. Create cleanup mechanisms with graceful shutdown. Implement resource allocation strategies with prioritization. Design resource throttling and quota enforcement mechanisms.
+<info added on 2025-05-12T18:47:08.104Z>
+Design resource pooling for connections and heavy objects. Implement resource usage tracking and metrics collection. Create cleanup mechanisms with graceful shutdown. Implement resource allocation strategies with prioritization. Design resource throttling and quota enforcement mechanisms.
+
+For the MVP implementation, we've identified that the primary resource requiring management is the Browserbase session. The current Orchestrator implementation already handles the essential resource lifecycle:
+
+1. Allocation: The `_create_browserbase_session` method successfully handles session creation.
+2. Tracking: Active sessions are tracked in the `_active_sessions` dictionary within the Orchestrator class, with proper lock management to ensure thread safety.
+3. Cleanup: The `_release_browserbase_session` method is called reliably for all successfully created sessions within the `finally` block of the `run_workflow` method, ensuring proper resource cleanup.
+
+This implementation covers the core requirements for the MVP. The more advanced features originally specified (connection pooling, detailed metrics collection, throttling mechanisms, and quota enforcement) have been deferred as they are not necessary for the initial release. No additional code changes are needed for this subtask at this time.
+</info added on 2025-05-12T18:47:08.104Z>
+
+## 7. Develop Monitoring and Observability [done]
+### Dependencies: 4.2, 4.5, 4.6
+### Description: Create comprehensive monitoring, metrics collection, and observability features to track system health and performance.
+### Details:
+Implement metrics collection for key performance indicators. Create health check endpoints and probes. Design distributed tracing across service boundaries. Implement alerting mechanisms for critical issues. Create dashboards for system visibility. Design audit logging for security and compliance.
+<info added on 2025-05-14T07:39:51.724Z>
+Implement metrics collection for key performance indicators. Create health check endpoints and probes. Design distributed tracing across service boundaries. Implement alerting mechanisms for critical issues. Create dashboards for system visibility. Design audit logging for security and compliance.
+
+Enhanced Logging Implementation Plan for MVP:
+
+1. Review and enhance logging in src/orchestrator.py:
+   - Add structured logging for key operational events including session creation/release, task creation/execution
+   - Include consistent identifiers (project_id, session_id, stagehand_task_id, stagehand_execution_id, workflow_name) in all relevant log messages
+   - Ensure all critical paths have appropriate logging coverage
+
+2. Standardize log format for improved parsing and readability:
+   - Maintain consistent use of logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+   - Structure operational log messages with key-value pairs: "Action: <action>, Status: <status>, Workflow: <name>, SessionID: <id>, TaskID: <id>, Details: <...>"
+   - Ensure machine-parseable format for automated log analysis
+
+3. Implement audit-worthy logging for key operations:
+   - Log run_workflow initiation with input parameters
+   - Log session creation/release operations with results
+   - Log Stagehand task creation and execution results
+   - Capture all significant errors with stack traces and contextual information
+
+4. Apply appropriate log levels throughout the codebase:
+   - INFO: Standard operational milestones
+   - DEBUG: Verbose development information
+   - WARNING: Recoverable issues
+   - ERROR: Non-recoverable operation failures
+   - CRITICAL: System-threatening conditions
+
+5. Update src/orchestrator.py methods:
+   - Enhance logging in __init__, _create_browserbase_session, _release_browserbase_session, run_workflow, and close methods
+   - Ensure consistent logging patterns across all methods
+</info added on 2025-05-14T07:39:51.724Z>
+
+## 8. Implement Testing Framework [done]
+### Dependencies: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7
+### Description: Develop comprehensive testing infrastructure including unit tests, integration tests, and end-to-end tests for the orchestration service.
+### Details:
+Create unit test suites for core components. Implement integration test framework with service mocks. Design end-to-end test scenarios covering critical paths. Implement performance and load testing infrastructure. Create test data generators and fixtures. Design continuous integration pipeline for automated testing.
+<info added on 2025-05-14T07:42:45.710Z>
+Create unit test suites for core components. Implement integration test framework with service mocks. Design end-to-end test scenarios covering critical paths. Implement performance and load testing infrastructure. Create test data generators and fixtures. Design continuous integration pipeline for automated testing.
+
+Implementation plan for Orchestrator Testing with MVP focus:
+
+1. Set up Test Structure:
+   - Create and organize tests in the `tests/orchestrator/` directory
+   - Ensure `test_orchestrator.py` exists for main test cases
+   - Implement `conftest.py` for orchestrator-specific fixtures
+
+2. Develop Core Test Fixtures:
+   - `mock_browserbase_client`: AsyncMock of BrowserbaseClient
+   - `mock_stagehand_client`: AsyncMock of StagehandClient
+   - `orchestrator_instance`: Orchestrator initialized with mock clients
+   - `sample_workflow_builder`: WorkflowBuilder with valid workflow definition
+   - `sample_project_id`: String for browserbase_project_id
+
+3. Implement Unit/Integration Tests for Orchestrator.run_workflow:
+   - Successful execution tests (single and multiple sessions)
+   - Stagehand task creation failure tests
+   - Browserbase session creation failure tests (complete and partial)
+   - Stagehand task execution failure tests
+   - Browserbase session release failure tests
+   - Verify proper error handling and result reporting in all scenarios
+
+4. Refine Orchestrator Implementation:
+   - Address issues and improvements identified during test development
+   - Ensure robust error handling for all API interactions
+   - Implement proper cleanup of resources even in failure scenarios
+
+5. Additional Unit Tests (Optional for MVP):
+   - Test helper methods like _create_browserbase_session and _release_browserbase_session
+   - Add more granular tests as orchestrator complexity increases
+
+Each test case should verify both the correct behavior of the orchestrator and proper interaction with dependent services through the mock clients.
+</info added on 2025-05-14T07:42:45.710Z>
+
+## 9. Implement Basic Health Check Endpoint [done]
+### Dependencies: None
+### Description: Add a basic /health HTTP endpoint to the Orchestration Service to indicate its operational status.
+### Details:
+1. Ensure `src/orchestrator.py` exists with an `Orchestrator` class. 2. Set up a lightweight async web server (e.g., using `aiohttp` or `FastAPI`) within the orchestrator's context. 3. Implement a `/health` route that returns a 200 OK with `{"status": "healthy"}`. 4. Add `aiohttp` or `fastapi` to `requirements.txt`.
+<info added on 2025-05-13T15:57:31.740Z>
+1. Create `src/orchestrator.py` (if it doesn't exist):
+   - Define a basic `Orchestrator` class.
+
+2. Update `requirements.txt`:
+   - Add `fastapi`
+   - Add `uvicorn[standard]` (for the web server)
+
+3. Modify `src/orchestrator.py`:
+   - Import `FastAPI` from `fastapi` and `uvicorn`.
+   - Create a FastAPI application instance: `app = FastAPI()`.
+   - Define an async function for the `/health` GET endpoint:
+     ```python
+     @app.get("/health")
+     async def health_check():
+         return {"status": "healthy"}
+     ```
+   - (Optional for now, can be a separate task) Add a method to the `Orchestrator` class like `start_api_server(self, host="0.0.0.0", port=8000)` that would use `uvicorn.run(app, host=host, port=port)`.
+   - For initial standalone testing, a `if __name__ == "__main__":` block can be added to directly run `uvicorn.run(app, host="0.0.0.0", port=8000)`.
+
+4. Create `tests/orchestrator/test_orchestrator.py` (if it doesn't exist):
+   - Add a basic test using `httpx` and `fastapi.testclient.TestClient` to check if the `/health` endpoint returns a 200 status and `{"status": "healthy"}`.
+   - Ensure `tests/orchestrator/__init__.py` exists.
+
+5. Update `src/__init__.py`:
+   - If `Orchestrator` class is created, export it from `src/__init__.py`
+</info added on 2025-05-13T15:57:31.740Z>
+

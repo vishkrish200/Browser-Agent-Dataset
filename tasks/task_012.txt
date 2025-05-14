@@ -1,0 +1,90 @@
+# Task ID: 12
+# Title: Develop LoRA Fine-tuning Recipe
+# Status: pending
+# Dependencies: 10
+# Priority: medium
+# Description: Create a reference LoRA fine-tuning pipeline for Qwen-2 and Mistral models using the generated dataset.
+# Details:
+1. Create a `finetune.py` module with training pipeline
+2. Implement LoRA configuration:
+   - Rank 16 as specified
+   - Target modules for attention layers
+   - Alpha parameter tuning
+3. Setup training loop with:
+   - Flash-Attention-2 integration
+   - Gradient accumulation for larger batch sizes
+   - Mixed precision training
+   - Checkpointing
+4. Add configuration for different models (Qwen-2-7B, Mistral-7B)
+5. Implement training monitoring and logging
+6. Create Q-LoRA variant for memory-constrained setups
+
+Example usage:
+```python
+from finetune import train_lora
+
+train_lora(
+    model_name="Qwen/Qwen2-7B",
+    dataset_path="./datasets/train.jsonl",
+    val_dataset_path="./datasets/val.jsonl",
+    output_dir="./checkpoints/",
+    lora_rank=16,
+    batch_size=4,
+    gradient_accumulation_steps=4,
+    learning_rate=2e-4,
+    epochs=3
+)
+```
+
+# Test Strategy:
+Unit tests for training configuration. Test with small synthetic dataset to verify training loop works. Benchmark memory usage and performance. Verify adapter merging and inference work correctly.
+
+# Subtasks:
+## 1. Module Setup [pending]
+### Dependencies: None
+### Description: Install and configure all required libraries and dependencies for LoRA and Q-LoRA fine-tuning, including Transformers, Bits & Bytes, and Hugging Face Accelerate.
+### Details:
+Ensure the environment is ready for large model fine-tuning by installing the necessary Python packages and verifying GPU availability.
+
+## 2. LoRA Configuration [pending]
+### Dependencies: 12.1
+### Description: Define and initialize LoRA-specific configuration parameters such as rank, alpha, target modules, and dropout.
+### Details:
+Set up LoRAConfig or equivalent, specifying which model modules to adapt and the LoRA hyperparameters (e.g., r, lora_alpha, lora_dropout, target_modules).
+
+## 3. Model Support and Preparation [pending]
+### Dependencies: 12.1, 12.2
+### Description: Load the base model and prepare it for LoRA or Q-LoRA fine-tuning, including enabling gradient checkpointing and quantization if needed.
+### Details:
+Load the pre-trained model, apply LoRA or Q-LoRA wrappers, and ensure the model is ready for efficient training (e.g., using prepare_model_for_kbit_training for Q-LoRA).
+
+## 4. Training Loop Implementation [pending]
+### Dependencies: 12.3
+### Description: Implement the training loop for fine-tuning the model using LoRA or Q-LoRA, integrating with the chosen trainer (e.g., Hugging Face Trainer).
+### Details:
+Set up the training script or notebook, define optimizer, loss function, and training schedule, and ensure compatibility with LoRA-adapted models.
+
+## 5. Monitoring and Logging [pending]
+### Dependencies: 12.4
+### Description: Integrate monitoring and logging tools to track training progress, resource utilization, and key metrics.
+### Details:
+Configure logging of loss, accuracy, and GPU utilization; optionally integrate with external tools (e.g., Weights & Biases, TensorBoard, or Databricks metrics tab).
+
+## 6. Q-LoRA Variant Integration [pending]
+### Dependencies: 12.3
+### Description: Adapt the pipeline to support Q-LoRA, including quantization-aware training and any additional configuration or preparation steps.
+### Details:
+Modify model preparation and training steps to use quantized weights and Q-LoRA-specific routines, ensuring compatibility with the rest of the pipeline.
+
+## 7. Checkpointing [pending]
+### Dependencies: 12.4
+### Description: Implement checkpointing to periodically save model weights and training state for recovery and later inference.
+### Details:
+Configure the training loop or trainer to save checkpoints at regular intervals or epochs, including adapter weights and optimizer state.
+
+## 8. Testing and Evaluation [pending]
+### Dependencies: 12.4, 12.7
+### Description: Evaluate the fine-tuned model on validation and test datasets to assess performance and generalization.
+### Details:
+Load the best checkpoint, run inference on test data, and report metrics such as loss, accuracy, and qualitative prompt-response examples.
+
