@@ -242,9 +242,41 @@ For CLI testing specifically:
 5. Evaluate and confirm that the current test file organization is maintainable as the CLI functionality expands.
 </info added on 2025-05-14T18:27:18.743Z>
 
-## 7. Finalize CLI Implementation and Documentation [pending]
+## 7. Finalize CLI Implementation and Documentation [done]
 ### Dependencies: 9.2, 9.3, 9.4, 9.5, 9.6
 ### Description: Complete the CLI implementation, perform final testing, and prepare comprehensive external documentation.
 ### Details:
 Conduct final review of all commands and options. Ensure proper exit codes are used. Verify all error handling. Create external documentation including README, installation guide, and advanced usage examples.
+<info added on 2025-05-14T18:33:05.310Z>
+Conduct final review of all commands and options. Ensure proper exit codes are used. Verify all error handling. Create external documentation including README, installation guide, and advanced usage examples.
+
+This subtask will be executed in four main phases:
+
+1. Review Current CLI State:
+   - Verify all previous subtasks (9.1-9.6) are complete and functioning correctly
+   - Confirm the CLI framework properly supports all implemented placeholder commands
+   - Check command structure, naming conventions, and help text for consistency
+
+2. Outline External CLI Documentation:
+   - Create documentation structure covering:
+     - Installation instructions (development setup and future package installation)
+     - Configuration guide (.env file setup, configure init command usage)
+     - Core concepts overview of the CLI architecture
+     - Comprehensive command reference for bad-agent, configure, and collect command groups
+     - Document any planned future command groups
+     - Usage examples demonstrating typical workflows
+     - Development notes for contributors on extending the CLI
+
+3. Draft External Documentation:
+   - Create or update documentation files (README.md and/or docs/cli.md)
+   - Incorporate auto-generated help outputs where appropriate
+   - Ensure documentation matches actual implementation
+   - Include screenshots or terminal output examples where helpful
+
+4. Self-Review Documentation:
+   - Verify documentation clarity, accuracy, and completeness
+   - Ensure installation and configuration instructions are easy to follow
+   - Check that all current commands are properly documented
+   - Validate all examples work as described
+</info added on 2025-05-14T18:33:05.310Z>
 
