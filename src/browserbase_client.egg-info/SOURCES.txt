@@ -2,6 +2,7 @@ README.md
 pyproject.toml
 src/bad_agent_cli/__init__.py
 src/bad_agent_cli/collect_cli.py
+src/bad_agent_cli/config.py
 src/bad_agent_cli/configure_cli.py
 src/bad_agent_cli/main.py
 src/browserbase_client/__init__.py

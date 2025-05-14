@@ -14,6 +14,7 @@ tomli>=2.0.0 # For parsing pyproject.toml
 tenacity>=8.2.0,<9.0.0 # For retry logic
 # gzip # Removed as it's a built-in module
 typer[all]
+pydantic-settings
 # Add other core dependencies below
 
 # Testing
