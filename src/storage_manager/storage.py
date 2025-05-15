@@ -19,7 +19,16 @@ ACTION_DATA_FILENAME = "action.json"
 METADATA_FILENAME = "metadata.json"
 
 class StorageManager:
-    """Manages storage and retrieval of data from S3 or local filesystem."""
+    """Manages storage and retrieval of data from S3 or local filesystem.
+
+    The manager can be configured to use AWS S3 as the primary backend or
+    a local filesystem path. Configuration is resolved from constructor
+    parameters, environment variables, or default values.
+
+    Key functionalities include storing and retrieving step-specific data
+    (HTML, screenshots, action data, metadata), listing sessions and steps,
+    and deleting step or session data.
+    """
 
     def __init__(
         self,
@@ -33,16 +42,24 @@ class StorageManager:
 
         Configuration for S3 bucket, region, and local path are resolved by:
         1. Direct parameters to constructor.
-        2. Environment variables (handled by sm_config getters).
-        3. Default values (handled by sm_config getters).
+        2. Environment variables (see `config.py` for details).
+        3. Default values (see `config.py` for details).
+
+        The effective storage backend (S3 or local) is determined by the
+        `prefer_s3` flag and whether S3 is correctly configured (e.g.,
+        bucket name provided, S3 client initializes successfully).
 
         Args:
-            s3_bucket_name: Override for S3 bucket name.
-            s3_region_name: Override for S3 region name.
-            local_base_path: Override for local storage base path.
-            prefer_s3: If True and S3 is configured, S3 will be the primary storage.
-                       If False, or if S3 is not configured (no bucket name), 
-                       local storage will be used.
+            s3_bucket_name: Override for S3 bucket name. If not provided,
+                            resolved from `SM_S3_BUCKET_NAME` env var or defaults to None.
+            s3_region_name: Override for S3 region name. If not provided,
+                            resolved from `SM_S3_REGION` env var or `DEFAULT_S3_REGION`.
+            local_base_path: Override for local storage base path. If not provided,
+                             resolved from `SM_LOCAL_BASE_PATH` env var or `DEFAULT_LOCAL_BASE_PATH`.
+            prefer_s3: If True (default) and S3 is configured, S3 will be the
+                       primary storage. If False, or if S3 is not fully configured
+                       (e.g., no bucket name, client init fails), local storage will be used.
+                       The local base path directory is created if it doesn't exist.
         """
         self.s3_bucket_name = sm_config.get_s3_bucket_name(bucket_override=s3_bucket_name)
         self.s3_region_name = sm_config.get_s3_region(region_override=s3_region_name)
@@ -75,7 +92,17 @@ class StorageManager:
             logger.info(f"StorageManager initialized to use Local Storage at {self.local_base_path}.")
 
     def _get_s3_client(self):
-        """Initializes and returns the S3 client. Raises S3ConfigError on failure."""
+        """Initializes and returns the Boto3 S3 client.
+
+        The client is cached after the first successful initialization.
+        Relies on AWS credentials being available in the environment or standard
+        AWS credential locations.
+
+        Raises:
+            S3ConfigError: If S3 bucket name is not configured, or if AWS
+                           credentials are not found/incomplete, or if any other
+                           error occurs during Boto3 client initialization.
+        """
         if self._s3_client is None:
             if not self.s3_bucket_name:
                 raise S3ConfigError("S3 bucket name is not configured.")
@@ -105,17 +132,54 @@ class StorageManager:
         return self._s3_client
 
     def _get_s3_key(self, session_id: str, step_id: str, filename: str) -> str:
-        """Constructs the S3 key for a given data component."""
+        """Constructs the S3 key for a given data component.
+
+        Args:
+            session_id: The ID of the session.
+            step_id: The ID of the step within the session.
+            filename: The name of the file (e.g., 'observation.html').
+
+        Returns:
+            The constructed S3 key string (e.g., 'session_id/step_id/filename').
+        """
         return f"{session_id}/{step_id}/{filename}"
 
     def _get_local_path(self, session_id: str, step_id: str, filename: str) -> str:
-        """Constructs the local file path for a given data component and ensures directory exists."""
+        """Constructs the local file path for a given data component.
+
+        Ensures that the directory structure (<local_base_path>/<session_id>/<step_id>)
+        is created if it doesn't already exist.
+
+        Args:
+            session_id: The ID of the session.
+            step_id: The ID of the step within the session.
+            filename: The name of the file (e.g., 'observation.html').
+
+        Returns:
+            The absolute local file path string.
+        """
         step_dir = os.path.join(self.local_base_path, session_id, step_id)
         os.makedirs(step_dir, exist_ok=True)
         return os.path.join(step_dir, filename)
 
     def _upload_to_s3(self, data: Union[str, bytes], s3_key: str, content_type: Optional[str] = None) -> str:
-        """Uploads data (bytes or string) to S3 and returns the S3 URL."""
+        """Uploads data (bytes or string) to S3.
+
+        String data is encoded to UTF-8 before uploading.
+
+        Args:
+            data: The data to upload (string or bytes).
+            s3_key: The S3 key (path) where the data will be stored.
+            content_type: Optional. The MIME type of the content (e.g., 'text/html').
+
+        Returns:
+            The S3 URL of the uploaded object (e.g., 's3://bucket_name/key').
+
+        Raises:
+            S3ConfigError: If the S3 client cannot be initialized.
+            S3OperationError: If the S3 `put_object` operation fails.
+            StorageManagerError: For other unexpected errors during the upload process.
+        """
         s3_client = self._get_s3_client() # Ensures S3 is configured and client is available
         try:
             body_data = data.encode('utf-8') if isinstance(data, str) else data
@@ -140,7 +204,21 @@ class StorageManager:
             raise StorageManagerError(f"Unexpected error during S3 upload for {s3_key}: {e}") from e
 
     def _write_to_local(self, data: Union[str, bytes], local_path: str) -> str:
-        """Writes data (bytes or string) to a local file and returns the absolute path."""
+        """Writes data (bytes or string) to a local file.
+
+        String data is written as UTF-8.
+
+        Args:
+            data: The data to write (string or bytes).
+            local_path: The absolute or relative local file path.
+
+        Returns:
+            The absolute path to the written file.
+
+        Raises:
+            LocalStorageError: If an IOError occurs during file writing.
+            StorageManagerError: For other unexpected errors during the write process.
+        """
         try:
             mode = 'wb' if isinstance(data, bytes) else 'w'
             encoding = None if isinstance(data, bytes) else 'utf-8'
@@ -157,7 +235,20 @@ class StorageManager:
             raise StorageManagerError(f"Unexpected error writing to {local_path}: {e}") from e
 
     def _download_from_s3(self, s3_key: str) -> bytes:
-        """Downloads data from S3 and returns it as bytes."""
+        """Downloads data from S3.
+
+        Args:
+            s3_key: The S3 key (path) of the object to download.
+
+        Returns:
+            The downloaded data as bytes.
+
+        Raises:
+            S3ConfigError: If the S3 client cannot be initialized.
+            S3OperationError: If the S3 `get_object` operation fails (e.g., NoSuchKey,
+                              or other client errors).
+            StorageManagerError: For other unexpected errors during the download process.
+        """
         s3_client = self._get_s3_client()
         try:
             response = s3_client.get_object(Bucket=self.s3_bucket_name, Key=s3_key)
@@ -175,7 +266,18 @@ class StorageManager:
             raise StorageManagerError(f"Unexpected error during S3 download for {s3_key}: {e}") from e
 
     def _read_from_local(self, local_path: str) -> bytes:
-        """Reads data from a local file and returns it as bytes."""
+        """Reads data from a local file.
+
+        Args:
+            local_path: The absolute or relative local file path to read from.
+
+        Returns:
+            The file content as bytes.
+
+        Raises:
+            LocalStorageError: If the file is not found or an IOError occurs during reading.
+            StorageManagerError: For other unexpected errors during the read process.
+        """
         try:
             with open(local_path, 'rb') as f:
                 data_bytes = f.read()
@@ -192,7 +294,19 @@ class StorageManager:
             raise StorageManagerError(f"Unexpected error reading {local_path}: {e}") from e
 
     def get_storage_info(self) -> Dict[str, Any]:
-        """Returns a dictionary with current storage configuration info."""
+        """Returns a dictionary with current storage configuration information.
+
+        This can be used to understand the active storage backend (S3 or local)
+        and its associated parameters.
+
+        Returns:
+            A dictionary containing:
+                - 'uses_s3' (bool): True if S3 is the active backend.
+                - 's3_bucket' (Optional[str]): S3 bucket name if using S3, else None.
+                - 's3_region' (Optional[str]): S3 region name if using S3, else None.
+                - 'local_base_path' (str): The absolute base path for local storage.
+                - 'effective_storage_type' (str): 'S3' or 'Local'.
+        """
         return {
             "uses_s3": self.use_s3,
             "s3_bucket": self.s3_bucket_name if self.use_s3 else None,
@@ -212,10 +326,36 @@ class StorageManager:
         metadata: Optional[Dict[str, Any]] = None # For any other structured data
     ) -> Dict[str, Optional[str]]:
         """
-        Stores data for a single step (HTML, screenshot, action, metadata).
-        Data is stored according to the bucket structure: s3://<bucket>/<session_id>/<step_id>/<file_type>.<ext>
-        or local structure: <local_base_path>/<session_id>/<step_id>/<file_type>.<ext>
-        Returns a dictionary of stored paths (S3 URLs or local file paths).
+        Stores data components for a single browser interaction step.
+
+        Data can include HTML content, a screenshot, structured action data (JSON),
+        and other metadata (JSON). Each provided component is stored either in S3
+        or the local filesystem, based on the StorageManager's configuration.
+
+        The storage path follows a structured format:
+        - S3: `s3://<bucket_name>/<session_id>/<step_id>/<component_filename>`
+        - Local: `<local_base_path>/<session_id>/<step_id>/<component_filename>`
+
+        Standard filenames (e.g., `observation.html`, `screenshot.png`) are used.
+
+        Args:
+            session_id: The unique identifier for the session.
+            step_id: The unique identifier for the step within the session.
+            html_content: Optional HTML content (string or bytes).
+            screenshot_bytes: Optional screenshot image data (bytes).
+            action_data: Optional dictionary вино action data (will be stored as JSON).
+            metadata: Optional dictionary with other metadata (will be stored as JSON).
+
+        Returns:
+            A dictionary mapping component types (e.g., 'html_path') to their
+            storage paths (S3 URLs or absolute local file paths). If a component
+            was not provided or failed to store, its path will be None.
+
+        Raises:
+            S3OperationError: If an S3 operation (e.g., upload) fails.
+            LocalStorageError: If a local filesystem operation (e.g., write) fails.
+            StorageManagerError: For other unexpected errors during orchestration.
+            S3ConfigError: If S3 is used but client cannot be initialized.
         """
         paths: Dict[str, Optional[str]] = {
             "html_path": None,
@@ -281,9 +421,23 @@ class StorageManager:
         step_id: str
     ) -> Tuple[Optional[str], Optional[bytes], Optional[Dict[str, Any]], Optional[Dict[str,Any]]]:
         """
-        Retrieves all data (HTML, screenshot, action, metadata) for a specific step.
-        Returns a tuple: (html_content_str, screenshot_bytes, action_data_dict, metadata_dict).
-        If a component is not found, its corresponding return value will be None.
+        Retrieves all data components (HTML, screenshot, action, metadata) for a specific step.
+
+        Attempts to fetch each standard component (HTML, screenshot, action data, metadata)
+        from the configured storage backend (S3 or local). If a component is not found
+        or an error occurs while retrieving or processing it (e.g., JSON decoding error),
+        that specific component will be returned as None in the tuple. Errors are logged,
+        but the method attempts to retrieve other components.
+
+        Args:
+            session_id: The unique identifier for the session.
+            step_id: The unique identifier for the step within the session.
+
+        Returns:
+            A tuple containing:
+                (html_content_str, screenshot_bytes, action_data_dict, metadata_dict)
+            Each element can be None if the corresponding data was not found or
+            could not be processed.
         """
         html_content_str: Optional[str] = None
         screenshot_bytes_val: Optional[bytes] = None # Renamed to avoid clash with screenshot_bytes parameter name in store_step_data
@@ -338,8 +492,21 @@ class StorageManager:
         logger.info(f"Retrieved data for session {session_id}, step {step_id}.")
         return html_content_str, screenshot_bytes_val, action_data_dict, metadata_dict_val
 
-    async def list_sessions(self) -> list[str]:
-        """Lists available session_ids."""
+    async def list_sessions(self) -> List[str]:
+        """Lists available unique session IDs from the storage backend.
+
+        For S3, this lists common prefixes (directories) at the root of the bucket.
+        For local storage, this lists directories directly under the `local_base_path`.
+
+        Returns:
+            A sorted list of session ID strings. Returns an empty list if no
+            sessions are found or if the storage path is inaccessible.
+
+        Raises:
+            S3OperationError: If listing S3 sessions fails due to a client error.
+            LocalStorageError: If listing local sessions fails due to an OSError.
+            S3ConfigError: If S3 is used but client cannot be initialized.
+        """
         session_ids = set()
         if self.use_s3:
             s3_client = self._get_s3_client()
@@ -370,8 +537,24 @@ class StorageManager:
         
         return sorted(list(session_ids)) # Return sorted list for consistent order
 
-    async def list_steps_for_session(self, session_id: str) -> list[str]:
-        """Lists available step_ids for a given session_id."""
+    async def list_steps_for_session(self, session_id: str) -> List[str]:
+        """Lists available unique step IDs for a given session_id.
+
+        For S3, this lists common prefixes (directories) under `session_id/`.
+        For local storage, this lists directories directly under `<local_base_path>/<session_id>/`.
+
+        Args:
+            session_id: The ID of the session for which to list steps.
+
+        Returns:
+            A sorted list of step ID strings. Returns an empty list if no
+            steps are found, the session does not exist, or the path is inaccessible.
+
+        Raises:
+            S3OperationError: If listing S3 steps fails due to a client error.
+            LocalStorageError: If listing local steps fails due to an OSError.
+            S3ConfigError: If S3 is used but client cannot be initialized.
+        """
         step_ids = set()
         if self.use_s3:
             s3_client = self._get_s3_client()
@@ -407,7 +590,25 @@ class StorageManager:
         return sorted(list(step_ids)) # Return sorted list for consistent order
 
     async def delete_step(self, session_id: str, step_id: str) -> None:
-        """Deletes all data associated with a specific step within a session."""
+        """Deletes all data associated with a specific step within a session.
+
+        For S3, this involves listing all objects under the `session_id/step_id/`
+        prefix and then performing a batch delete operation.
+        For local storage, this removes the `local_base_path/session_id/step_id/`
+        directory and all its contents.
+
+        If the step does not exist or no objects/directory are found, the operation
+        completes silently (with an informational log).
+
+        Args:
+            session_id: The ID of the session containing the step.
+            step_id: The ID of the step to delete.
+
+        Raises:
+            S3OperationError: If listing or deleting S3 objects fails.
+            LocalStorageError: If deleting the local step directory fails due to an OSError.
+            S3ConfigError: If S3 is used but client cannot be initialized.
+        """
         if self.use_s3:
             s3_client = self._get_s3_client()
             prefix_to_delete = f"{session_id}/{step_id}/"
@@ -448,7 +649,24 @@ class StorageManager:
                 logger.info(f"Local step directory {step_path} not found or not a directory. Nothing to delete.")
 
     async def delete_session(self, session_id: str) -> None:
-        """Deletes all data associated with an entire session, including all its steps."""
+        """Deletes all data associated with an entire session, including all its steps.
+
+        For S3, this involves listing all objects under the `session_id/`
+        prefix and then performing a batch delete operation.
+        For local storage, this removes the `local_base_path/session_id/`
+        directory and all its contents.
+
+        If the session does not exist or no objects/directory are found, the operation
+        completes silently (with an informational log).
+
+        Args:
+            session_id: The ID of the session to delete.
+
+        Raises:
+            S3OperationError: If listing or deleting S3 objects fails.
+            LocalStorageError: If deleting the local session directory fails due to an OSError.
+            S3ConfigError: If S3 is used but client cannot be initialized.
+        """
         if self.use_s3:
             s3_client = self._get_s3_client()
             prefix_to_delete = f"{session_id}/"
