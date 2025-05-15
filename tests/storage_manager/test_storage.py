@@ -626,3 +626,165 @@ class TestStorageManagerDownloadOperations:
             assert local_retrieved["metadata"] is None
             assert local_retrieved["retrieved_all"] is False
             assert "Failed to retrieve html_content for empty_session/empty_step from local." in caplog.text # Check one 
+
+class TestStorageManagerListingOperations:
+    """Tests for listing operations in StorageManager."""
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_s3_success(self, mock_s3_sm):
+        sm, mock_client = mock_s3_sm
+        mock_paginator = MagicMock()
+        mock_client.get_paginator.return_value = mock_paginator
+        mock_paginator.paginate.return_value = [
+            {
+                "CommonPrefixes": [
+                    {"Prefix": "session1/"},
+                    {"Prefix": "session2/"},
+                ]
+            },
+            {
+                "CommonPrefixes": [
+                    {"Prefix": "session3/"},
+                ]
+            }
+        ]
+
+        sessions = await sm.list_sessions()
+        assert sorted(sessions) == ["session1", "session2", "session3"]
+        mock_client.get_paginator.assert_called_once_with('list_objects_v2')
+        mock_paginator.paginate.assert_called_once_with(Bucket=sm.s3_bucket_name, Delimiter='/')
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_s3_no_sessions(self, mock_s3_sm):
+        sm, mock_client = mock_s3_sm
+        mock_paginator = MagicMock()
+        mock_client.get_paginator.return_value = mock_paginator
+        mock_paginator.paginate.return_value = [{'CommonPrefixes': []}]
+        sessions = await sm.list_sessions()
+        assert sessions == []
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_s3_client_error(self, mock_s3_sm):
+        sm, mock_client = mock_s3_sm
+        mock_paginator = MagicMock()
+        mock_client.get_paginator.return_value = mock_paginator
+        mock_paginator.paginate.side_effect = ClientError({"Error": {}}, "list_objects_v2")
+        with pytest.raises(S3OperationError, match="Failed to list S3 sessions"):
+            await sm.list_sessions()
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_local_success(self, local_sm_real_fs, tmp_path):
+        sm = local_sm_real_fs
+        sm._local_base_path = tmp_path # Ensure sm uses the tmp_path for this test
+        (tmp_path / "sessionA").mkdir()
+        (tmp_path / "sessionB").mkdir()
+        (tmp_path / "file.txt").write_text("ignore") # Should be ignored
+
+        sessions = await sm.list_sessions()
+        assert sorted(sessions) == ["sessionA", "sessionB"]
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_local_empty(self, local_sm_real_fs, tmp_path):
+        sm = local_sm_real_fs
+        sm._local_base_path = tmp_path
+        sessions = await sm.list_sessions()
+        assert sessions == []
+    
+    @pytest.mark.asyncio
+    async def test_list_sessions_local_base_path_does_not_exist(self, local_sm_real_fs):
+        sm = local_sm_real_fs
+        sm._local_base_path = Path("/non/existent/path/for/testing/sessions")
+        # Ensure the path doesn't exist (it shouldn't by default, but defensive)
+        assert not sm._local_base_path.exists()
+        sessions = await sm.list_sessions()
+        assert sessions == [] # Should log a warning and return empty
+
+    @pytest.mark.asyncio
+    async def test_list_sessions_local_os_error(self, local_sm_real_fs, tmp_path):
+        sm = local_sm_real_fs
+        sm._local_base_path = tmp_path
+        with patch("os.listdir", side_effect=OSError("Permission denied")):
+             with pytest.raises(LocalStorageError, match="Failed to list local sessions"):
+                await sm.list_sessions()
+
+    @pytest.mark.asyncio
+    async def test_list_steps_for_session_s3_success(self, mock_s3_sm):
+        sm, mock_client = mock_s3_sm
+        session_id = "sess1"
+        mock_paginator = MagicMock()
+        mock_client.get_paginator.return_value = mock_paginator
+        mock_paginator.paginate.return_value = [
+            {
+                "CommonPrefixes": [
+                    {"Prefix": "sess1/stepA/"},
+                    {"Prefix": "sess1/stepB/"},
+                ]
+            }
+        ]
+        steps = await sm.list_steps_for_session(session_id)
+        assert sorted(steps) == ["stepA", "stepB"]
+        mock_client.get_paginator.assert_called_once_with('list_objects_v2')
+        mock_paginator.paginate.assert_called_once_with(Bucket=sm.s3_bucket_name, Prefix=f"{session_id}/", Delimiter='/')
+
+    @pytest.mark.asyncio
+    async def test_list_steps_for_session_s3_no_steps(self, mock_s3_sm):
+        sm, mock_client = mock_s3_sm
+        session_id = "sess_empty"
+        mock_paginator = MagicMock()
+        mock_client.get_paginator.return_value = mock_paginator
+        mock_paginator.paginate.return_value = [] # No pages or no CommonPrefixes
+        steps = await sm.list_steps_for_session(session_id)
+        assert steps == []
+
+    @pytest.mark.asyncio
+    async def test_list_steps_for_session_s3_client_error(self, mock_s3_sm):
+        sm, mock_client = mock_s3_sm
+        session_id = "sess_err"
+        mock_paginator = MagicMock()
+        mock_client.get_paginator.return_value = mock_paginator
+        mock_paginator.paginate.side_effect = ClientError({"Error": {}}, "list_objects_v2")
+        with pytest.raises(S3OperationError, match=f"Failed to list S3 steps for session {session_id}"):
+            await sm.list_steps_for_session(session_id)
+
+    @pytest.mark.asyncio
+    async def test_list_steps_for_session_local_success(self, local_sm_real_fs, tmp_path):
+        sm = local_sm_real_fs
+        sm._local_base_path = tmp_path
+        session_id = "sessionX"
+        session_path = tmp_path / session_id
+        session_path.mkdir()
+        (session_path / "step1").mkdir()
+        (session_path / "step2").mkdir()
+        (session_path / "metadata.json").write_text("session_metadata") # Should be ignored
+
+        steps = await sm.list_steps_for_session(session_id)
+        assert sorted(steps) == ["step1", "step2"]
+
+    @pytest.mark.asyncio
+    async def test_list_steps_for_session_local_empty(self, local_sm_real_fs, tmp_path):
+        sm = local_sm_real_fs
+        sm._local_base_path = tmp_path
+        session_id = "sessionEmpty"
+        (tmp_path / session_id).mkdir() # Session dir exists but is empty
+        steps = await sm.list_steps_for_session(session_id)
+        assert steps == []
+
+    @pytest.mark.asyncio
+    async def test_list_steps_for_session_local_session_path_does_not_exist(self, local_sm_real_fs, tmp_path):
+        sm = local_sm_real_fs
+        sm._local_base_path = tmp_path
+        session_id = "non_existent_session"
+        # Ensure session path doesn't exist
+        assert not (tmp_path / session_id).exists()
+        steps = await sm.list_steps_for_session(session_id)
+        assert steps == [] # Should log a warning and return empty
+
+    @pytest.mark.asyncio
+    async def test_list_steps_for_session_local_os_error(self, local_sm_real_fs, tmp_path):
+        sm = local_sm_real_fs
+        sm._local_base_path = tmp_path
+        session_id = "session_os_error"
+        (tmp_path / session_id).mkdir()
+        with patch("os.listdir", side_effect=OSError("Access denied")):
+             with pytest.raises(LocalStorageError, match=f"Failed to list local steps for session {session_id}"):
+                await sm.list_steps_for_session(session_id) 

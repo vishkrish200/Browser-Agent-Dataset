@@ -339,15 +339,71 @@ class StorageManager:
 
     async def list_sessions(self) -> list[str]:
         """Lists available session_ids."""
-        # TODO: Implement based on Subtask 11.4 (Session and Step Listing)
-        logger.warning("list_sessions is not fully implemented yet.")
-        return []
+        session_ids = set()
+        if self.use_s3:
+            s3_client = self._get_s3_client()
+            paginator = s3_client.get_paginator('list_objects_v2')
+            try:
+                for page in paginator.paginate(Bucket=self.s3_bucket_name, Delimiter='/'):
+                    for prefix_info in page.get('CommonPrefixes', []):
+                        # CommonPrefixes gives paths like 'session_id/', so strip the trailing '/'
+                        session_id = prefix_info.get('Prefix', '').rstrip('/')
+                        if session_id: # Ensure it's not an empty string
+                            session_ids.add(session_id)
+                logger.debug(f"Found S3 sessions: {list(session_ids)}")
+            except ClientError as e:
+                logger.error(f"Error listing S3 sessions: {e}", exc_info=True)
+                raise S3OperationError("Failed to list S3 sessions", operation="list_sessions", original_exception=e) from e
+        else:
+            if not os.path.exists(self.local_base_path) or not os.path.isdir(self.local_base_path):
+                logger.warning(f"Local base path {self.local_base_path} does not exist or is not a directory. Returning empty session list.")
+                return []
+            try:
+                for item in os.listdir(self.local_base_path):
+                    if os.path.isdir(os.path.join(self.local_base_path, item)):
+                        session_ids.add(item)
+                logger.debug(f"Found local sessions: {list(session_ids)}")
+            except OSError as e:
+                logger.error(f"Error listing local sessions from {self.local_base_path}: {e}", exc_info=True)
+                raise LocalStorageError(f"Failed to list local sessions: {e}") from e
+        
+        return sorted(list(session_ids)) # Return sorted list for consistent order
 
     async def list_steps_for_session(self, session_id: str) -> list[str]:
         """Lists available step_ids for a given session_id."""
-        # TODO: Implement based on Subtask 11.4
-        logger.warning("list_steps_for_session is not fully implemented yet.")
-        return []
+        step_ids = set()
+        if self.use_s3:
+            s3_client = self._get_s3_client()
+            paginator = s3_client.get_paginator('list_objects_v2')
+            prefix = f"{session_id}/" # Ensure trailing slash for S3 prefix
+            try:
+                for page in paginator.paginate(Bucket=self.s3_bucket_name, Prefix=prefix, Delimiter='/'):
+                    for prefix_info in page.get('CommonPrefixes', []):
+                        # Prefix will be like 'session_id/step_id/'. We need to extract 'step_id'
+                        full_step_prefix = prefix_info.get('Prefix', '')
+                        if full_step_prefix.startswith(prefix):
+                            step_id = full_step_prefix[len(prefix):].rstrip('/')
+                            if step_id: # Ensure it's not an empty string
+                                step_ids.add(step_id)
+                logger.debug(f"Found S3 steps for session {session_id}: {list(step_ids)}")
+            except ClientError as e:
+                logger.error(f"Error listing S3 steps for session {session_id}: {e}", exc_info=True)
+                raise S3OperationError(f"Failed to list S3 steps for session {session_id}", operation="list_steps", original_exception=e) from e
+        else:
+            session_path = os.path.join(self.local_base_path, session_id)
+            if not os.path.exists(session_path) or not os.path.isdir(session_path):
+                logger.warning(f"Local session path {session_path} does not exist or is not a directory. Returning empty step list.")
+                return []
+            try:
+                for item in os.listdir(session_path):
+                    if os.path.isdir(os.path.join(session_path, item)):
+                        step_ids.add(item)
+                logger.debug(f"Found local steps for session {session_id}: {list(step_ids)}")
+            except OSError as e:
+                logger.error(f"Error listing local steps from {session_path}: {e}", exc_info=True)
+                raise LocalStorageError(f"Failed to list local steps for session {session_id}: {e}") from e
+        
+        return sorted(list(step_ids)) # Return sorted list for consistent order
 
 if __name__ == '__main__':
     # Example usage / basic test
