@@ -3,11 +3,16 @@ Handles formatting of raw data into structured ProcessedDataRecord objects
 and serializing them to JSONL strings.
 '''
 import json
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, List
+import logging
+import os
 from pydantic import ValidationError
 
 from .types import ProcessedDataRecord, ActionDetail, RawStagehandAction
-from .exceptions import DataFormattingError
+from .exceptions import DataFormattingError, FormattingError
+from .image_handler import ImageHandler
+
+logger = logging.getLogger(__name__)
 
 def create_processed_data_record(
     step_id: str,
@@ -68,6 +73,7 @@ def serialize_record_to_jsonl(record: ProcessedDataRecord) -> str:
     try:
         return record.model_dump_json(exclude_none=True)
     except Exception as e:
+        logger.error(f"Failed to serialize record (step_id: {record.step_id}) to JSON: {str(e)}", exc_info=True)
         raise DataFormattingError(f"Failed to serialize record (step_id: {record.step_id}) to JSON: {str(e)}") from e
 
 # --- Example of how one might construct the LLM training string --- 
@@ -76,7 +82,8 @@ def serialize_record_to_jsonl(record: ProcessedDataRecord) -> str:
 def format_for_llm_prompt_completion(
     record: ProcessedDataRecord,
     include_html: bool = True,
-    include_image_path: bool = False 
+    include_image_path: bool = False, 
+    image_handler: Optional[ImageHandler] = None
 ) -> Dict[str, str]:
     '''
     (Conceptual) Formats a ProcessedDataRecord into a prompt/completion pair 
@@ -84,6 +91,8 @@ def format_for_llm_prompt_completion(
     `<DOM>...HTML content...</DOM><ACTION>click #selector</ACTION>`
     This is a simplified example.
     '''
+    current_image_handler = image_handler if image_handler else ImageHandler()
+
     if not record.html_content and include_html:
         dom_representation = "<DOM>HTML content not available</DOM>"
     elif include_html:
@@ -102,15 +111,101 @@ def format_for_llm_prompt_completion(
     url_representation = f"<URL>{record.url}</URL>"
 
     image_representation = ""
-    if include_image_path and record.screenshot_s3_path:
-        image_representation = f"<IMAGE>{record.screenshot_s3_path}</IMAGE>"
-    elif include_image_path and record.processed_image_path:
-         image_representation = f"<IMAGE>{record.processed_image_path}</IMAGE>"
+    if include_image_path:
+        img_ref = current_image_handler.get_image_reference(record)
+        if img_ref:
+            image_representation = f"<IMAGE>{img_ref}</IMAGE>"
+        # else: image_representation remains "" if no valid reference found
 
     full_text = f"{dom_representation}{url_representation}{action_representation}{image_representation}".strip()
     full_text = ' '.join(full_text.split())
     return {"id": record.step_id, "text": full_text}
 
+class JsonlFormatter:
+    """Handles formatting and writing ProcessedDataRecord objects to JSONL files."""
+
+    def __init__(self, image_handler: ImageHandler):
+        """
+        Initializes the JsonlFormatter.
+
+        Args:
+            image_handler: An instance of ImageHandler, used if image information
+                           needs to be processed or included during formatting.
+        """
+        if not isinstance(image_handler, ImageHandler):
+            # This check is more for robustness, type hinting should help.
+            raise TypeError("image_handler must be an instance of ImageHandler.")
+        self.image_handler = image_handler
+        logger.info("JsonlFormatter initialized.")
+
+    def format_record(self, record: ProcessedDataRecord, include_images: bool = False) -> Dict[str, Any]:
+        """
+        Formats a single ProcessedDataRecord into a dictionary suitable for JSONL.
+        This version will primarily rely on Pydantic's model_dump, but could be
+        extended to include image data or transform fields.
+
+        Args:
+            record: The ProcessedDataRecord to format.
+            include_images: If True, attempts to include image-related information.
+                            (Exact implementation of image inclusion depends on requirements)
+
+        Returns:
+            A dictionary representation of the record.
+        """
+        # Using model_dump for a dictionary representation
+        # exclude_none=True is good for keeping JSONL clean
+        record_dict = record.model_dump(exclude_none=True)
+
+        if include_images:
+            # Example: Add a direct reference or processed image data if required.
+            # For now, let's assume image_handler.get_image_reference provides the path.
+            # The ProcessedDataRecord already has screenshot_s3_path.
+            # If include_images meant embedding actual image data (e.g., base64),
+            # that logic would go here using self.image_handler.
+            # For this iteration, we'll assume the path in the record is sufficient if present.
+            # If an image was processed and a *new* path was generated, that should be in the record.
+            img_ref = self.image_handler.get_image_reference(record)
+            if img_ref:
+                # Could add a specific field like 'image_reference_for_dataset' if different from original
+                record_dict['dataset_image_reference'] = img_ref 
+            logger.debug(f"Image inclusion requested for record {record.step_id}. Ref: {img_ref}")
+        
+        return record_dict
+
+
+    def write_to_jsonl(self, records: List[ProcessedDataRecord], output_file_path: str, include_images: bool = False):
+        """
+        Writes a list of ProcessedDataRecord objects to a JSONL file.
+
+        Args:
+            records: A list of ProcessedDataRecord objects.
+            output_file_path: The path to the output JSONL file.
+            include_images: Passed to format_record if specific image handling is needed.
+
+        Raises:
+            FormattingError: If writing to the file fails.
+        """
+        logger.info(f"Writing {len(records)} records to JSONL file: {output_file_path}. Include images: {include_images}")
+        try:
+            os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
+            with open(output_file_path, 'w', encoding='utf-8') as f:
+                for record in records:
+                    try:
+                        # Using serialize_record_to_jsonl ensures Pydantic's robust JSON export
+                        # which handles HttpUrl and other custom types correctly.
+                        json_string = serialize_record_to_jsonl(record)
+                        f.write(json_string + '\n')
+                    except DataFormattingError as e:
+                        logger.error(f"Skipping record {record.step_id} due to serialization error: {e}", exc_info=True)
+                    except Exception as e_inner: # Catch any other unexpected error during individual record processing
+                        logger.error(f"Skipping record {record.step_id} due to unexpected error during serialization: {e_inner}", exc_info=True)
+            logger.info(f"Successfully wrote {len(records)} records to {output_file_path}")
+        except IOError as e:
+            logger.error(f"IOError writing to JSONL file {output_file_path}: {e}", exc_info=True)
+            raise FormattingError(f"Could not write to JSONL file {output_file_path}: {e}") from e
+        except Exception as e:
+            logger.error(f"Unexpected error writing to JSONL file {output_file_path}: {e}", exc_info=True)
+            raise FormattingError(f"An unexpected error occurred while writing to {output_file_path}: {e}") from e
 
 if __name__ == '__main__':
     # Example Usage:
@@ -143,18 +238,18 @@ if __name__ == '__main__':
         )
         print("Record created successfully:", record)
 
-        print("\\n--- Serializing to JSONL string ---")
+        print("\n--- Serializing to JSONL string ---")
         jsonl_string = serialize_record_to_jsonl(record)
         print(jsonl_string)
         decoded_json = json.loads(jsonl_string)
         print("Decoded JSON for verification:", decoded_json)
         assert decoded_json["step_id"] == "step123"
 
-        print("\\n--- Formatting for LLM (conceptual) ---")
+        print("\n--- Formatting for LLM (conceptual) ---")
         llm_formatted = format_for_llm_prompt_completion(record, include_html=True, include_image_path=True)
         print(llm_formatted)
 
-        print("\\n--- Example of creating with ActionDetail directly ---")
+        print("\n--- Example of creating with ActionDetail directly ---")
         record_with_action_detail = create_processed_data_record(
             step_id="step456",
             session_id="sessDEF",
@@ -166,7 +261,7 @@ if __name__ == '__main__':
         print("Record with ActionDetail:", record_with_action_detail)
         print(serialize_record_to_jsonl(record_with_action_detail))
 
-        print("\\n--- Example: Validation Error (invalid URL) ---")
+        print("\n--- Example: Validation Error (invalid URL) ---")
         invalid_action_data = {"type": "scroll"}
         try:
             create_processed_data_record(
@@ -179,7 +274,7 @@ if __name__ == '__main__':
         except DataFormattingError as e:
             print(f"Caught expected formatting error (invalid URL): {e}")
         
-        print("\\n--- Example: Validation Error (invalid S3 path) ---")
+        print("\n--- Example: Validation Error (invalid S3 path) ---")
         try:
             create_processed_data_record(
                 step_id="stepErrS3",

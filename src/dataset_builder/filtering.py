@@ -11,7 +11,7 @@ from .exceptions import FilteringError
 # Type alias for a filter function that takes a record and returns True if it should be kept.
 FilterCallable = Callable[[ProcessedDataRecord], bool]
 
-class DataFilterer:
+class DataFilter:
     '''
     Applies a series of filters to a list of ProcessedDataRecord objects.
     Filters can be predefined (like by URL domain) or custom callables.
@@ -145,7 +145,7 @@ if __name__ == '__main__':
     print("Original records:", len(sample_records))
 
     # Filter to keep only 'example.com' domains and action type 'click'
-    filterer = DataFilterer()
+    filterer = DataFilter()
     filterer.add_filter_by_url_domain(domains_to_keep=['example.com'])
     filterer.add_filter_by_action_type(action_types_to_keep=['click'])
     
@@ -155,7 +155,7 @@ if __name__ == '__main__':
     # Expected: s1, s3 (if URL was corrected)
 
     # Filter to exclude 'input' actions and keep if HTML contains "world"
-    filterer2 = DataFilterer()
+    filterer2 = DataFilter()
     filterer2.add_filter_by_action_type(action_types_to_exclude=['input'])
     filterer2.add_filter_by_html_content_regex(r"world", present=True)
 
@@ -168,7 +168,7 @@ if __name__ == '__main__':
     def custom_step_id_filter(record: ProcessedDataRecord) -> bool:
         return record.step_id == 's4'
 
-    filterer3 = DataFilterer()
+    filterer3 = DataFilter()
     filterer3.add_filter(custom_step_id_filter)
     filtered3 = filterer3.filter_records(sample_records)
     print(f"\nFiltered (custom filter step_id='s4'): {len(filtered3)} records")
