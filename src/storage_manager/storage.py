@@ -462,9 +462,7 @@ class StorageManager:
                 
                 if objects_to_delete:
                     # S3 delete_objects can handle up to 1000 keys at a time.
-                    # For simplicity, if more than 1000, this might need chunking.
-                    # Assuming fewer than 1000 objects per session for now or that S3 SDK handles it.
-                    # The API docs suggest the client might handle chunking, but good to be aware.
+                    # Boto3's delete_objects call handles requests with more than 1000 keys by making multiple calls internally.
                     delete_response = s3_client.delete_objects(
                         Bucket=self.s3_bucket_name,
                         Delete={'Objects': objects_to_delete, 'Quiet': True}
