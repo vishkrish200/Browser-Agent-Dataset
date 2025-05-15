@@ -719,7 +719,7 @@
         6,
         7
       ],
-      "status": "done",
+      "status": "pending",
       "subtasks": [
         {
           "id": 1,
@@ -776,8 +776,8 @@
           "dependencies": [
             1
           ],
-          "details": "Create components for image loading, resizing, normalization, and augmentation. Implement efficient storage and retrieval mechanisms for image data. Ensure compatibility with common image formats and integration with the JSONL data structure.\n<info added on 2025-05-15T15:41:19.089Z>\nCreate components for image loading, resizing, normalization, and augmentation. Implement efficient storage and retrieval mechanisms for image data. Ensure compatibility with common image formats and integration with the JSONL data structure.\n\nThe ImageHandler class has been implemented in src/dataset_builder/image_handler.py with the following key features:\n\nLocal image processing capabilities:\n- Loading images from local paths with support for PNG, JPEG, GIF, and WEBP formats\n- Resizing images with configurable dimensions\n- Normalization of images (RGB conversion, pixel value scaling)\n- Basic image augmentation including random flip, rotation, and color jitter\n- Saving processed images to local paths in various formats with quality control\n\nAWS S3 integration:\n- Downloading images from S3 buckets\n- Uploading processed images to S3\n- End-to-end S3 processing pipeline (download, process locally, upload)\n- Configurable S3 bucket settings\n- Added boto3 and moto dependencies to requirements.txt\n\nError handling through custom ImageProcessingError class for graceful failure management.\n\nA helper method get_image_reference has been implemented to retrieve image paths from ProcessedDataRecord objects, facilitating integration with the JsonlFormatter.\n\nComprehensive unit tests have been created in tests/dataset_builder/test_image_handler.py covering both local processing and S3 operations (using moto for mocking).\n</info added on 2025-05-15T15:41:19.089Z>",
-          "status": "done"
+          "details": "Create components for image loading, resizing, normalization, and augmentation. Implement efficient storage and retrieval mechanisms for image data. Ensure compatibility with common image formats and integration with the JSONL data structure.",
+          "status": "pending"
         },
         {
           "id": 7,
@@ -791,8 +791,8 @@
             5,
             6
           ],
-          "details": "Develop unit tests for each module and integration tests for the complete pipeline. Implement data quality checks and performance benchmarks. Create automated test workflows to ensure ongoing code quality and functionality.\n<info added on 2025-05-15T17:44:57.226Z>\nDevelop unit tests for each module and integration tests for the complete pipeline. Implement data quality checks and performance benchmarks. Create automated test workflows to ensure ongoing code quality and functionality.\n\nIntegration tests for the DatasetBuilder pipeline have been implemented in `tests/dataset_builder/test_builder.py` under the new class `TestDatasetBuilderIntegration`. These tests cover:\n- Basic end-to-end data flow using real components (ImageHandler, JsonlFormatter, DataFilter, DataSplitter, DatasetStatistics)\n- Verification of train/validation splitting logic and output files\n- Testing of filtering functionality with domain-based filters\n- Correct handling of the `include_images` flag by the formatter (checking for `dataset_image_reference`) and statistics module (checking `records_with_images`)\n- The `_load_processed_data` method of `DatasetBuilder` is currently patched to inject controlled test data\n\nThis integration testing significantly improves test coverage by ensuring components work together as expected within the main `build_dataset` workflow.\n</info added on 2025-05-15T17:44:57.226Z>",
-          "status": "done"
+          "details": "Develop unit tests for each module and integration tests for the complete pipeline. Implement data quality checks and performance benchmarks. Create automated test workflows to ensure ongoing code quality and functionality.",
+          "status": "pending"
         }
       ]
     },
@@ -800,13 +800,13 @@
       "id": 11,
       "title": "Implement S3 Storage Integration",
       "description": "Develop a storage module for handling data storage and retrieval from S3, following the specified bucket structure.",
-      "status": "done",
+      "details": "1. Create a `storage.py` module with StorageManager class\n2. Implement methods for:\n   - Uploading HTML, screenshots, and action data\n   - Retrieving data by session_id and step_id\n   - Listing available sessions and steps\n   - Managing lifecycle policies\n3. Add support for local filesystem fallback for development\n4. Implement batched operations for efficiency\n5. Add retry logic and error handling\n\nExample usage:\n```python\nfrom storage import StorageManager\n\nstorage = StorageManager(\"s3://checkpoints/\")\nstorage.store_step_data(\n    session_id=\"session123\",\n    step_id=\"step456\",\n    html_content=\"<html>...</html>\",\n    screenshot_bytes=screenshot_data,\n    action_data={\"type\": \"click\", \"selector\": \"#button\"}\n)\n\nhtml, screenshot, action = storage.retrieve_step_data(\"session123\", \"step456\")\n```",
+      "testStrategy": "Unit tests for storage and retrieval operations with mocked S3. Integration test with actual S3 bucket (or LocalStack). Test error handling and retries. Verify data integrity through round-trip tests.",
+      "priority": "medium",
       "dependencies": [
         5
       ],
-      "priority": "medium",
-      "details": "1. Create a `storage.py` module with StorageManager class\n2. Implement methods for:\n   - Uploading HTML, screenshots, and action data\n   - Retrieving data by session_id and step_id\n   - Listing available sessions and steps\n   - Managing lifecycle policies\n3. Add support for local filesystem fallback for development\n4. Implement batched operations for efficiency\n5. Add retry logic and error handling\n\nExample usage:\n```python\nfrom storage import StorageManager\n\nstorage = StorageManager(\"s3://checkpoints/\")\nstorage.store_step_data(\n    session_id=\"session123\",\n    step_id=\"step456\",\n    html_content=\"<html>...</html>\",\n    screenshot_bytes=screenshot_data,\n    action_data={\"type\": \"click\", \"selector\": \"#button\"}\n)\n\nhtml, screenshot, action = storage.retrieve_step_data(\"session123\", \"step456\")\n```",
-      "testStrategy": "Unit tests for storage and retrieval operations with mocked S3. Integration test with actual S3 bucket (or LocalStack). Test error handling and retries. Verify data integrity through round-trip tests.",
+      "status": "pending",
       "subtasks": [
         {
           "id": 1,
@@ -814,7 +814,7 @@
           "description": "Initialize the module, configure AWS credentials, and set up S3 bucket access, including local fallback configuration.",
           "dependencies": [],
           "details": "Set up the project structure, install necessary dependencies (e.g., AWS SDK), and configure environment variables for S3 and local fallback. Ensure secure handling of credentials and provide configuration options for both S3 and local storage.",
-          "status": "done"
+          "status": "pending"
         },
         {
           "id": 2,
@@ -824,7 +824,7 @@
             1
           ],
           "details": "Implement file upload functions that can handle single and batched uploads. Integrate error detection to trigger fallback to local storage when S3 is unreachable or errors occur.",
-          "status": "done"
+          "status": "pending"
         },
         {
           "id": 3,
@@ -833,8 +833,8 @@
           "dependencies": [
             1
           ],
-          "details": "Implement file retrieval functions that prioritize S3 but can seamlessly switch to local storage if needed. Ensure efficient streaming and error handling.\n<info added on 2025-05-15T19:00:54.098Z>\nImplemented the download functionality in the StorageManager class with the following components:\n\n1. Helper methods:\n   - _download_from_s3: Handles retrieval of files from S3 storage\n   - _read_from_local: Manages file access from local filesystem\n\n2. Main method:\n   - retrieve_step_data: Core function that intelligently selects between S3 and local storage based on configuration and availability\n\n3. Testing:\n   - Created TestStorageManagerDownloadOperations test suite\n   - Test coverage includes:\n     * S3 download operations\n     * Local file reading operations\n     * Success case validation\n     * Missing file handling\n     * Error handling and recovery\n   - Fixed a syntax error in the existing TestStorageManagerUploadOperations\n\nThe implementation prioritizes S3 storage but gracefully falls back to local storage when necessary, with proper error handling throughout the download pipeline.\n</info added on 2025-05-15T19:00:54.098Z>",
-          "status": "done"
+          "details": "Implement file retrieval functions that prioritize S3 but can seamlessly switch to local storage if needed. Ensure efficient streaming and error handling.",
+          "status": "pending"
         },
         {
           "id": 4,
@@ -844,8 +844,8 @@
             2,
             3
           ],
-          "details": "Create functions to enumerate sessions and steps, abstracting the storage backend. Ensure consistent output regardless of storage location. Build upon the existing StorageManager class to add list_sessions() and list_steps(session_id) methods that work with both S3 and local storage.\n<info added on 2025-05-15T19:03:45.368Z>\nCreate functions to enumerate sessions and steps, abstracting the storage backend. Ensure consistent output regardless of storage location. Build upon the existing StorageManager class to add list_sessions() and list_steps(session_id) methods that work with both S3 and local storage.\n\nThe implementation includes:\n1. Added list_sessions() method to StorageManager that returns all available sessions from either S3 or local storage\n2. Added list_steps_for_session(session_id) method that retrieves all steps associated with a specific session\n3. Ensured consistent return format regardless of the underlying storage backend\n4. Created TestStorageManagerListingOperations test suite with comprehensive unit tests covering:\n   - Successful listing operations for both backends\n   - Empty result handling when no sessions/steps exist\n   - Error condition handling and appropriate error propagation\n   - Edge cases specific to each storage backend\n\nBoth methods maintain the abstraction layer that shields the rest of the application from storage implementation details, following the pattern established in the download logic implementation.\n</info added on 2025-05-15T19:03:45.368Z>",
-          "status": "done"
+          "details": "Create functions to enumerate sessions and steps, abstracting the storage backend. Ensure consistent output regardless of storage location.",
+          "status": "pending"
         },
         {
           "id": 5,
@@ -856,8 +856,8 @@
             3,
             4
           ],
-          "details": "Add logic to manage file lifecycles, such as automatic deletion after expiration, version control, and cleanup of obsolete files in both S3 and local storage. Leverage the existing StorageManager infrastructure to implement delete_session(), delete_step(), and set_expiration() methods.\n<info added on 2025-05-15T19:06:10.149Z>\nThe StorageManager class has been extended with lifecycle management capabilities for both S3 and local storage. The implementation includes:\n\n1. delete_session() method - Removes all files associated with a specific session from both S3 and local storage\n2. delete_step() method - Removes files associated with a specific step within a session\n\nThese methods have been thoroughly tested through the TestStorageManagerDeletionOperations test suite, which covers:\n- Success cases for both deletion operations\n- \"Not found\" scenarios where the requested session or step doesn't exist\n- Error handling for various failure conditions\n\nThe versioning support and set_expiration() method implementation have been deferred pending more specific design decisions. These features may require bucket-level S3 configurations and policy decisions about retention periods. This deferral allows for more focused discussion on the specific requirements for these features before implementation.\n</info added on 2025-05-15T19:06:10.149Z>",
-          "status": "done"
+          "details": "Add logic to manage file lifecycles, such as automatic deletion after expiration, version control, and cleanup of obsolete files in both S3 and local storage.",
+          "status": "pending"
         },
         {
           "id": 6,
@@ -869,8 +869,8 @@
             4,
             5
           ],
-          "details": "Ensure all operations have try/catch blocks, meaningful error messages, and logging for debugging. Handle partial failures in batching and fallback gracefully. Review existing error handling in the completed upload and download implementations and ensure consistency across all new methods.\n<info added on 2025-05-15T19:07:13.635Z>\nThe StorageManager class has been reviewed and confirmed to have robust error handling and logging throughout. The implementation includes:\n\n1. Consistent use of custom exceptions across all S3 operations\n2. Proper exception chaining to preserve original error context\n3. Appropriate logging levels for different scenarios (debug, info, warning, error)\n4. Try/catch blocks around all external API calls\n5. Graceful handling of partial failures in batch operations\n6. Fallback mechanisms when primary operations fail\n\nNote regarding S3 delete_objects behavior: The S3 API returns a list of successfully deleted objects and a list of errors for failed deletions. Our implementation properly handles this by logging individual failures but continuing with the batch operation.\n\nAll error handling and logging patterns are consistent across upload, download, and deletion operations. No major code changes were needed as the requirements were largely met through the iterative development process.\n</info added on 2025-05-15T19:07:13.635Z>",
-          "status": "done"
+          "details": "Ensure all operations have try/catch blocks, meaningful error messages, and logging for debugging. Handle partial failures in batching and fallback gracefully.",
+          "status": "pending"
         },
         {
           "id": 7,
@@ -883,48 +883,8 @@
             5,
             6
           ],
-          "details": "Write unit and integration tests for upload/download, listing, lifecycle management, fallback logic, and error handling. Validate correctness and robustness under various failure modes. Build upon the existing test suites for upload and download operations to ensure comprehensive coverage of new functionality.\n<info added on 2025-05-15T19:08:58.966Z>\nWrite unit and integration tests for upload/download, listing, lifecycle management, fallback logic, and error handling. Validate correctness and robustness under various failure modes. Build upon the existing test suites for upload and download operations to ensure comprehensive coverage of new functionality.\n\nThe documentation for the StorageManager module has been completed. This includes:\n1. Updated method docstrings in `storage.py` with clear parameter descriptions, return values, and exception details\n2. Created comprehensive documentation in `docs/storage_manager.md` containing:\n   - Module overview and architecture\n   - Configuration instructions (environment variables and initialization parameters)\n   - API usage examples for all public methods\n   - Error handling patterns and best practices\n   \nThese documentation assets should be leveraged when developing test cases to ensure all documented functionality and edge cases are properly tested. The API examples in the documentation can serve as a starting point for test scenarios.\n</info added on 2025-05-15T19:08:58.966Z>\n<info added on 2025-05-15T19:09:32.454Z>\nThe automated testing strategy for the S3 Storage Integration should include both unit and integration tests to ensure comprehensive coverage of all functionality. The testing approach should be structured as follows:\n\n1. Unit Tests:\n   - Test individual components of the StorageManager in isolation\n   - Mock S3 service interactions to test upload/download logic\n   - Verify proper parameter validation and error handling\n   - Test fallback mechanisms when primary storage is unavailable\n   - Validate lifecycle management operations (retention, deletion, archiving)\n\n2. Integration Tests:\n   - Test end-to-end workflows using actual S3 connections (or localstack for CI)\n   - Verify correct handling of various file types and sizes\n   - Test batch operations for performance and reliability\n   - Validate proper credential handling and authentication\n   - Test concurrent operations and thread safety\n\n3. Error Scenario Testing:\n   - Simulate network failures during operations\n   - Test timeout handling and retry mechanisms\n   - Verify graceful degradation when S3 is unavailable\n   - Test recovery procedures after connection failures\n   - Validate proper logging of errors for troubleshooting\n\n4. Performance Testing:\n   - Benchmark upload/download speeds for various file sizes\n   - Test batching efficiency for multiple file operations\n   - Measure memory usage during large file transfers\n   - Verify performance under load conditions\n\nThe test suite should leverage the existing documentation to ensure all documented functionality is properly tested. Test cases should be organized to match the API structure outlined in the documentation, making it easy to identify coverage gaps.\n</info added on 2025-05-15T19:09:32.454Z>\n<info added on 2025-05-15T19:13:46.298Z>\nThe automated testing implementation for the S3 Storage Integration has been successfully completed with comprehensive test coverage across all core functionality. The test suite has been organized into multiple specialized test classes to ensure thorough validation of each component:\n\n1. TestStorageManagerInitialization - Verifies proper configuration handling for both S3 and local storage options, including environment variable processing and parameter validation.\n\n2. TestStorageManagerUploadOperations - Tests all upload functionality including single and multi-part uploads, proper handling of various file types and sizes, and validation of correct metadata assignment.\n\n3. TestStorageManagerDownloadOperations - Validates download capabilities including partial downloads, streaming responses, and proper handling of missing files.\n\n4. TestStorageManagerListingOperations - Ensures accurate listing of stored objects with proper filtering, pagination, and metadata retrieval.\n\n5. TestStorageManagerDeletionOperations - Tests object deletion operations, including individual and bulk deletions, with verification of proper cleanup.\n\n6. TestStorageManagerS3Integration - End-to-end tests using moto to mock S3 services, validating the complete lifecycle of objects from creation through deletion.\n\nAll tests cover both happy path scenarios and error conditions, with particular attention to the fallback mechanisms between S3 and local storage. Error handling has been thoroughly tested across network failures, permission issues, and invalid inputs.\n\nFor batching operations, the implementation leverages the S3 client's native capabilities for deletion batching, while uploads are handled per component as designed. No additional batching-specific tests were deemed necessary for the StorageManager itself as this aligns with the architectural decisions made during implementation.\n\nThe test suite provides near-complete code coverage of the StorageManager module and ensures the robustness of the S3 integration across all supported operations.\n</info added on 2025-05-15T19:13:46.298Z>",
-          "status": "done"
-        },
-        {
-          "id": 8,
-          "title": "Documentation and Usage Examples",
-          "description": "Create comprehensive documentation for the StorageManager class with usage examples for all implemented features.",
-          "dependencies": [
-            2,
-            3,
-            4,
-            5,
-            6
-          ],
-          "details": "Document all public methods, configuration options, and error handling strategies. Include examples for common use cases and edge cases. Ensure documentation covers both S3 and local storage scenarios.\n<info added on 2025-05-15T19:09:15.666Z>\nDocument all public methods, configuration options, and error handling strategies. Include examples for common use cases and edge cases. Ensure documentation covers both S3 and local storage scenarios.\n\nThe documentation for the StorageManager module has been completed. All method docstrings in `storage.py` have been updated to provide clear and detailed information about each method's purpose, parameters, return values, and potential exceptions.\n\nA comprehensive documentation file has been created at `docs/storage_manager.md` which includes:\n- A high-level overview of the StorageManager class and its purpose\n- Configuration instructions detailing required environment variables and initialization parameters\n- Complete API documentation for all public methods\n- Usage examples demonstrating common operations for both S3 and local storage backends\n- Error handling patterns and best practices\n- Edge case considerations and how to handle them\n\nThe documentation covers both S3 and local storage implementations, with specific examples for each storage type. Configuration options for authentication, region settings, and bucket/directory specifications are thoroughly explained with sample code.\n</info added on 2025-05-15T19:09:15.666Z>",
-          "status": "done"
-        },
-        {
-          "id": 9,
-          "title": "Complete Automated Testing for Listing and Deletion Operations",
-          "description": "Develop and execute automated tests specifically for the listing and deletion operations of the StorageManager.",
-          "dependencies": [
-            4,
-            5,
-            6,
-            8
-          ],
-          "details": "Focus on creating comprehensive test coverage for the listing and deletion functionality that was implemented in subtasks 4 and 5. This includes:\n\n1. Unit tests for list_sessions() and list_steps_for_session() methods\n   - Test with various session configurations\n   - Test empty results handling\n   - Test error conditions and recovery\n\n2. Unit tests for delete_session() and delete_step() methods\n   - Test successful deletion scenarios\n   - Test deletion of non-existent resources\n   - Test partial failure handling\n\n3. Integration tests with actual S3 or LocalStack\n   - End-to-end testing of listing and deletion workflows\n   - Verification of proper cleanup\n\nLeverage the existing documentation and test patterns established in the upload/download test suites to maintain consistency across the testing framework.\n<info added on 2025-05-15T19:12:01.137Z>\nFocus on creating comprehensive test coverage for the listing and deletion functionality that was implemented in subtasks 4 and 5. This includes:\n\n1. Unit tests for list_sessions() and list_steps_for_session() methods\n   - Test with various session configurations\n   - Test empty results handling\n   - Test error conditions and recovery\n\n2. Unit tests for delete_session() and delete_step() methods\n   - Test successful deletion scenarios\n   - Test deletion of non-existent resources\n   - Test partial failure handling\n\n3. Integration tests with actual S3 or LocalStack\n   - End-to-end testing of listing and deletion workflows\n   - Verification of proper cleanup\n\nLeverage the existing documentation and test patterns established in the upload/download test suites to maintain consistency across the testing framework.\n\nUnit tests for listing and deletion operations have been completed with comprehensive coverage for:\n- Various session configurations\n- Empty results handling\n- Error conditions (S3 ClientError, local OSError)\n- Non-existent paths\n- S3 delete_objects error handling\n\nRemaining work focuses on integration tests:\n1. Set up moto/LocalStack environment for S3 integration testing\n2. Implement end-to-end test cases for listing operations:\n   - Verify correct listing of multiple sessions with various configurations\n   - Test pagination and filtering functionality\n3. Implement end-to-end test cases for deletion operations:\n   - Verify complete session deletion including all child steps\n   - Test partial deletion scenarios\n   - Verify proper cleanup of all S3 resources\n4. Add test coverage for edge cases in an integrated environment\n5. Ensure consistent test patterns with existing upload/download test suites\n</info added on 2025-05-15T19:12:01.137Z>\n<info added on 2025-05-15T19:12:59.859Z>\nIntegration testing for S3 operations has been successfully implemented using the moto library. The implementation includes:\n\n1. Created reusable test fixtures:\n   - aws_credentials: Configures mock AWS credentials for testing\n   - s3_client: Provides a mocked S3 client instance\n   - s3_bucket: Creates a fresh test bucket for each test case\n\n2. Implemented TestStorageManagerS3Integration class with comprehensive test coverage:\n   - test_s3_full_lifecycle_single_session_step: A complete end-to-end test that verifies:\n     * Storing data to S3\n     * Listing sessions and steps\n     * Retrieving stored data\n     * Deleting individual steps\n     * Deleting entire sessions\n     * Proper cleanup of all S3 resources\n\n3. The integration tests complement the previously completed unit tests, providing full test coverage for the listing and deletion operations as required.\n\nThis implementation fulfills the integration testing requirements specified in the subtask, ensuring that the S3 storage integration works correctly for listing and deletion operations in a realistic environment.\n</info added on 2025-05-15T19:12:59.859Z>",
-          "status": "done"
-        },
-        {
-          "id": 10,
-          "title": "Advanced Lifecycle Management Features",
-          "description": "Implement the deferred advanced lifecycle management features including versioning support and expiration policies.",
-          "dependencies": [
-            5,
-            6,
-            8,
-            9
-          ],
-          "details": "Based on the implementation notes from subtask 5, develop the deferred features for advanced lifecycle management:\n\n1. Implement set_expiration() method to configure retention periods for sessions and steps\n2. Add versioning support for critical data\n3. Implement automatic cleanup based on configured expiration policies\n4. Ensure these features work consistently across both S3 and local storage backends\n\nThis work should build upon the existing delete_session() and delete_step() methods, extending the StorageManager's capabilities while maintaining the established patterns for error handling and abstraction.",
-          "status": "done"
+          "details": "Write unit and integration tests for upload/download, listing, lifecycle management, fallback logic, and error handling. Validate correctness and robustness under various failure modes.",
+          "status": "pending"
         }
       ]
     },

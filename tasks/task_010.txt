@@ -1,6 +1,6 @@
 # Task ID: 10
 # Title: Develop JSONL Dataset Builder
-# Status: done
+# Status: pending
 # Dependencies: 5, 6, 7
 # Priority: high
 # Description: Create a module to transform collected and processed data into JSONL format suitable for LLM fine-tuning.
@@ -151,106 +151,27 @@ The implementation has been completed with the creation of a `DataFilterer` clas
 The component is designed to work with ProcessedDataRecord objects and supports both configurable and extensible filtering capabilities. Comprehensive unit tests have been added in `test_filtering.py` that cover filter logic, filter combinations, and error handling scenarios. The filtering component is now ready for integration with the JSONL dataset builder pipeline.
 </info added on 2025-05-14T19:29:20.484Z>
 
-## 4. Develop data splitting functionality [done]
+## 4. Develop data splitting functionality [pending]
 ### Dependencies: 10.3
 ### Description: Create functionality to split datasets into training, validation, and test sets
 ### Details:
 Implement methods for random, stratified, and time-based splitting. Ensure reproducibility by supporting seed values. Add options for customizing split ratios and maintaining data distribution characteristics.
-<info added on 2025-05-14T20:05:05.189Z>
-Implement methods for random, stratified, and time-based splitting. Ensure reproducibility by supporting seed values. Add options for customizing split ratios and maintaining data distribution characteristics.
 
-Implementation progress:
-- Created DataSplitter class in splitting.py with random splitting functionality
-- Added support for random seed parameter to ensure reproducibility
-- Implemented validation of split ratios to prevent invalid configurations
-- Created DataSplittingError exception class in exceptions.py for error handling
-- Developed comprehensive unit tests in test_splitting.py covering:
-  * Default and custom split ratios
-  * Reproducibility with seed values
-  * Edge cases: empty lists, invalid ratios
-  * Behavior with small datasets
-  * Handling of ratios that would result in zero-sized splits
-- All unit tests are passing
-
-Next steps:
-- Implement stratified splitting functionality
-- Implement time-based splitting functionality
-- Add documentation and usage examples
-</info added on 2025-05-14T20:05:05.189Z>
-
-## 5. Create statistical analysis module [done]
+## 5. Create statistical analysis module [pending]
 ### Dependencies: 10.2
 ### Description: Develop a module for calculating and reporting dataset statistics
 ### Details:
 Implement functions to calculate descriptive statistics, identify outliers, and analyze data distributions. Create visualization capabilities for key metrics. Design the module to work efficiently with large datasets.
-<info added on 2025-05-14T20:07:24.547Z>
-The DatasetStatistics class has been implemented in statistics.py with the following key features:
 
-1. Core statistical calculations:
-   - Total record count
-   - Action type distribution (frequency of each action)
-   - Unique domain count
-   - Domain distribution (frequency of each domain)
-
-2. Error handling:
-   - Graceful handling of empty input by returning zeroed/empty statistics
-   - Custom DataStatisticsError exception added to exceptions.py for specific error cases
-
-3. Testing:
-   - Comprehensive unit tests in test_statistics.py
-   - Test cases cover empty lists, sample data scenarios
-   - Tests for handling potentially unparseable URLs (leveraging Pydantic's HttpUrl validation)
-   - All tests passing
-
-The module is designed to work with the JSONL dataset structure and provides essential metrics for dataset quality assessment and exploration. These statistics will help users understand the composition and characteristics of their datasets before training models.
-</info added on 2025-05-14T20:07:24.547Z>
-
-## 6. Build image processing handler [done]
+## 6. Build image processing handler [pending]
 ### Dependencies: 10.1
 ### Description: Develop functionality for processing and transforming image data
 ### Details:
 Create components for image loading, resizing, normalization, and augmentation. Implement efficient storage and retrieval mechanisms for image data. Ensure compatibility with common image formats and integration with the JSONL data structure.
-<info added on 2025-05-15T15:41:19.089Z>
-Create components for image loading, resizing, normalization, and augmentation. Implement efficient storage and retrieval mechanisms for image data. Ensure compatibility with common image formats and integration with the JSONL data structure.
 
-The ImageHandler class has been implemented in src/dataset_builder/image_handler.py with the following key features:
-
-Local image processing capabilities:
-- Loading images from local paths with support for PNG, JPEG, GIF, and WEBP formats
-- Resizing images with configurable dimensions
-- Normalization of images (RGB conversion, pixel value scaling)
-- Basic image augmentation including random flip, rotation, and color jitter
-- Saving processed images to local paths in various formats with quality control
-
-AWS S3 integration:
-- Downloading images from S3 buckets
-- Uploading processed images to S3
-- End-to-end S3 processing pipeline (download, process locally, upload)
-- Configurable S3 bucket settings
-- Added boto3 and moto dependencies to requirements.txt
-
-Error handling through custom ImageProcessingError class for graceful failure management.
-
-A helper method get_image_reference has been implemented to retrieve image paths from ProcessedDataRecord objects, facilitating integration with the JsonlFormatter.
-
-Comprehensive unit tests have been created in tests/dataset_builder/test_image_handler.py covering both local processing and S3 operations (using moto for mocking).
-</info added on 2025-05-15T15:41:19.089Z>
-
-## 7. Implement comprehensive testing framework [done]
+## 7. Implement comprehensive testing framework [pending]
 ### Dependencies: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6
 ### Description: Create a testing framework for validating all components
 ### Details:
 Develop unit tests for each module and integration tests for the complete pipeline. Implement data quality checks and performance benchmarks. Create automated test workflows to ensure ongoing code quality and functionality.
-<info added on 2025-05-15T17:44:57.226Z>
-Develop unit tests for each module and integration tests for the complete pipeline. Implement data quality checks and performance benchmarks. Create automated test workflows to ensure ongoing code quality and functionality.
-
-Integration tests for the DatasetBuilder pipeline have been implemented in `tests/dataset_builder/test_builder.py` under the new class `TestDatasetBuilderIntegration`. These tests cover:
-- Basic end-to-end data flow using real components (ImageHandler, JsonlFormatter, DataFilter, DataSplitter, DatasetStatistics)
-- Verification of train/validation splitting logic and output files
-- Testing of filtering functionality with domain-based filters
-- Correct handling of the `include_images` flag by the formatter (checking for `dataset_image_reference`) and statistics module (checking `records_with_images`)
-- The `_load_processed_data` method of `DatasetBuilder` is currently patched to inject controlled test data
-
-This integration testing significantly improves test coverage by ensuring components work together as expected within the main `build_dataset` workflow.
-</info added on 2025-05-15T17:44:57.226Z>
 
