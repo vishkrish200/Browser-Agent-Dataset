@@ -1,7 +1,8 @@
 import os
 import logging
-from typing import Optional, Tuple, Dict, Any, Union
+from typing import Optional, Tuple, Dict, Any, Union, List
 import json # Added for serializing dicts
+import shutil # Added for local directory deletion
 
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError, PartialCredentialsError
@@ -404,6 +405,91 @@ class StorageManager:
                 raise LocalStorageError(f"Failed to list local steps for session {session_id}: {e}") from e
         
         return sorted(list(step_ids)) # Return sorted list for consistent order
+
+    async def delete_step(self, session_id: str, step_id: str) -> None:
+        """Deletes all data associated with a specific step within a session."""
+        if self.use_s3:
+            s3_client = self._get_s3_client()
+            prefix_to_delete = f"{session_id}/{step_id}/"
+            objects_to_delete = []
+            paginator = s3_client.get_paginator('list_objects_v2')
+            try:
+                for page in paginator.paginate(Bucket=self.s3_bucket_name, Prefix=prefix_to_delete):
+                    if 'Contents' in page:
+                        for obj in page['Contents']:
+                            objects_to_delete.append({'Key': obj['Key']})
+                
+                if objects_to_delete:
+                    delete_response = s3_client.delete_objects(
+                        Bucket=self.s3_bucket_name,
+                        Delete={'Objects': objects_to_delete, 'Quiet': True}
+                    )
+                    if 'Errors' in delete_response and delete_response['Errors']:
+                        logger.error(f"Errors encountered deleting objects for step {prefix_to_delete} from S3: {delete_response['Errors']}")
+                        # Convert S3 error list to a more manageable string or raise specific error
+                        error_details = ", ".join([f"{err['Key']}: {err['Message']}" for err in delete_response['Errors']])
+                        raise S3OperationError(f"Errors deleting from S3 for step {prefix_to_delete}: {error_details}", operation="delete_step")
+                    logger.info(f"Successfully deleted {len(objects_to_delete)} objects for step {prefix_to_delete} from S3.")
+                else:
+                    logger.info(f"No objects found to delete for step {prefix_to_delete} in S3.")
+            except ClientError as e:
+                logger.error(f"ClientError deleting step {prefix_to_delete} from S3: {e}", exc_info=True)
+                raise S3OperationError(f"Failed to delete S3 step {prefix_to_delete}", operation="delete_step", original_exception=e) from e
+        else:
+            step_path = os.path.join(self.local_base_path, session_id, step_id)
+            if os.path.exists(step_path) and os.path.isdir(step_path):
+                try:
+                    shutil.rmtree(step_path)
+                    logger.info(f"Successfully deleted local step directory: {step_path}")
+                except OSError as e:
+                    logger.error(f"OSError deleting local step directory {step_path}: {e}", exc_info=True)
+                    raise LocalStorageError(f"Failed to delete local step {step_path}: {e}") from e
+            else:
+                logger.info(f"Local step directory {step_path} not found or not a directory. Nothing to delete.")
+
+    async def delete_session(self, session_id: str) -> None:
+        """Deletes all data associated with an entire session, including all its steps."""
+        if self.use_s3:
+            s3_client = self._get_s3_client()
+            prefix_to_delete = f"{session_id}/"
+            objects_to_delete = []
+            paginator = s3_client.get_paginator('list_objects_v2')
+            try:
+                for page in paginator.paginate(Bucket=self.s3_bucket_name, Prefix=prefix_to_delete):
+                    if 'Contents' in page:
+                        for obj in page['Contents']:
+                            objects_to_delete.append({'Key': obj['Key']})
+                
+                if objects_to_delete:
+                    # S3 delete_objects can handle up to 1000 keys at a time.
+                    # For simplicity, if more than 1000, this might need chunking.
+                    # Assuming fewer than 1000 objects per session for now or that S3 SDK handles it.
+                    # The API docs suggest the client might handle chunking, but good to be aware.
+                    delete_response = s3_client.delete_objects(
+                        Bucket=self.s3_bucket_name,
+                        Delete={'Objects': objects_to_delete, 'Quiet': True}
+                    )
+                    if 'Errors' in delete_response and delete_response['Errors']:
+                        logger.error(f"Errors encountered deleting objects for session {prefix_to_delete} from S3: {delete_response['Errors']}")
+                        error_details = ", ".join([f"{err['Key']}: {err['Message']}" for err in delete_response['Errors']])
+                        raise S3OperationError(f"Errors deleting from S3 for session {prefix_to_delete}: {error_details}", operation="delete_session")
+                    logger.info(f"Successfully deleted {len(objects_to_delete)} objects for session {prefix_to_delete} from S3.")
+                else:
+                    logger.info(f"No objects found to delete for session {prefix_to_delete} in S3.")
+            except ClientError as e:
+                logger.error(f"ClientError deleting session {prefix_to_delete} from S3: {e}", exc_info=True)
+                raise S3OperationError(f"Failed to delete S3 session {prefix_to_delete}", operation="delete_session", original_exception=e) from e
+        else:
+            session_path = os.path.join(self.local_base_path, session_id)
+            if os.path.exists(session_path) and os.path.isdir(session_path):
+                try:
+                    shutil.rmtree(session_path)
+                    logger.info(f"Successfully deleted local session directory: {session_path}")
+                except OSError as e:
+                    logger.error(f"OSError deleting local session directory {session_path}: {e}", exc_info=True)
+                    raise LocalStorageError(f"Failed to delete local session {session_path}: {e}") from e
+            else:
+                logger.info(f"Local session directory {session_path} not found or not a directory. Nothing to delete.")
 
 if __name__ == '__main__':
     # Example usage / basic test

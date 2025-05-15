@@ -3,6 +3,7 @@ import os
 from unittest.mock import patch, MagicMock, mock_open
 import json
 from pathlib import Path
+from typing import Dict, List
 
 from src.storage_manager.storage import StorageManager, HTML_FILENAME, SCREENSHOT_FILENAME, ACTION_FILENAME, METADATA_FILENAME
 from src.storage_manager.exceptions import S3ConfigError, S3OperationError, LocalStorageError, StorageManagerError
@@ -787,4 +788,182 @@ class TestStorageManagerListingOperations:
         (tmp_path / session_id).mkdir()
         with patch("os.listdir", side_effect=OSError("Access denied")):
              with pytest.raises(LocalStorageError, match=f"Failed to list local steps for session {session_id}"):
-                await sm.list_steps_for_session(session_id) 
+                await sm.list_steps_for_session(session_id)
+
+class TestStorageManagerDeletionOperations:
+    """Tests for deletion operations in StorageManager."""
+
+    def _setup_local_dir_structure(self, base_path: Path, structure: Dict[str, List[str]]):
+        """Helper to create a session/step directory structure locally."""
+        for session_id, steps in structure.items():
+            session_dir = base_path / session_id
+            session_dir.mkdir(parents=True, exist_ok=True)
+            for step_id in steps:
+                step_dir = session_dir / step_id
+                step_dir.mkdir(parents=True, exist_ok=True)
+                # Create some dummy files in each step dir
+                (step_dir / HTML_FILENAME).write_text(f"html for {session_id}/{step_id}")
+                (step_dir / SCREENSHOT_FILENAME).write_text(f"screen for {session_id}/{step_id}")
+
+    @pytest.mark.asyncio
+    async def test_delete_step_s3_success(self, mock_s3_sm):
+        sm, mock_client = mock_s3_sm
+        session_id, step_id = "sessDel1", "stepDelA"
+        prefix_to_delete = f"{session_id}/{step_id}/"
+
+        mock_paginator = MagicMock()
+        mock_client.get_paginator.return_value = mock_paginator
+        mock_paginator.paginate.return_value = [
+            {
+                "Contents": [
+                    {"Key": f"{prefix_to_delete}file1.txt"},
+                    {"Key": f"{prefix_to_delete}file2.png"},
+                ]
+            }
+        ]
+        mock_client.delete_objects.return_value = {} # Successful deletion, no errors
+
+        await sm.delete_step(session_id, step_id)
+
+        mock_client.get_paginator.assert_called_once_with('list_objects_v2')
+        mock_paginator.paginate.assert_called_once_with(Bucket=sm.s3_bucket_name, Prefix=prefix_to_delete)
+        mock_client.delete_objects.assert_called_once_with(
+            Bucket=sm.s3_bucket_name,
+            Delete={
+                'Objects': [
+                    {'Key': f"{prefix_to_delete}file1.txt"},
+                    {'Key': f"{prefix_to_delete}file2.png"},
+                ],
+                'Quiet': True
+            }
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_step_s3_no_objects_found(self, mock_s3_sm):
+        sm, mock_client = mock_s3_sm
+        session_id, step_id = "sessDelEmpty", "stepDelEmpty"
+        prefix_to_delete = f"{session_id}/{step_id}/"
+
+        mock_paginator = MagicMock()
+        mock_client.get_paginator.return_value = mock_paginator
+        mock_paginator.paginate.return_value = [{}] # No 'Contents' key
+
+        await sm.delete_step(session_id, step_id)
+        mock_client.delete_objects.assert_not_called() # Should not be called if no objects
+
+    @pytest.mark.asyncio
+    async def test_delete_step_s3_delete_errors(self, mock_s3_sm):
+        sm, mock_client = mock_s3_sm
+        session_id, step_id = "sessDelErr", "stepDelErr"
+        prefix_to_delete = f"{session_id}/{step_id}/"
+        mock_paginator = MagicMock()
+        mock_client.get_paginator.return_value = mock_paginator
+        mock_paginator.paginate.return_value = [
+            {"Contents": [{"Key": f"{prefix_to_delete}file1.txt"}] }
+        ]
+        mock_client.delete_objects.return_value = {
+            'Errors': [{'Key': f"{prefix_to_delete}file1.txt", 'Code': 'AccessDenied', 'Message': 'Access Denied'}]
+        }
+        with pytest.raises(S3OperationError, match=f"Errors deleting from S3 for step {prefix_to_delete}"):
+            await sm.delete_step(session_id, step_id)
+
+    @pytest.mark.asyncio
+    async def test_delete_step_s3_list_client_error(self, mock_s3_sm):
+        sm, mock_client = mock_s3_sm
+        session_id, step_id = "sessListErr", "stepListErr"
+        prefix_to_delete = f"{session_id}/{step_id}/"
+        mock_paginator = MagicMock()
+        mock_client.get_paginator.return_value = mock_paginator
+        mock_paginator.paginate.side_effect = ClientError({"Error": {}}, "list_objects_v2")
+
+        with pytest.raises(S3OperationError, match=f"Failed to delete S3 step {prefix_to_delete}"):
+            await sm.delete_step(session_id, step_id)
+        mock_client.delete_objects.assert_not_called()
+
+
+    @pytest.mark.asyncio
+    async def test_delete_step_local_success(self, local_sm_real_fs, tmp_path):
+        sm = local_sm_real_fs
+        sm._local_base_path = tmp_path
+        session_id, step_id = "localSessDel1", "localStepDelA"
+        self._setup_local_dir_structure(tmp_path, {session_id: [step_id, "otherStep"]})
+        
+        step_path_to_delete = tmp_path / session_id / step_id
+        other_step_path = tmp_path / session_id / "otherStep"
+        assert step_path_to_delete.exists()
+        assert other_step_path.exists()
+
+        await sm.delete_step(session_id, step_id)
+
+        assert not step_path_to_delete.exists()
+        assert other_step_path.exists() # Ensure only specified step is deleted
+
+    @pytest.mark.asyncio
+    async def test_delete_step_local_not_found(self, local_sm_real_fs, tmp_path):
+        sm = local_sm_real_fs
+        sm._local_base_path = tmp_path
+        session_id, step_id = "localSessNonExist", "localStepNonExist"
+        # Ensure path does not exist
+        step_path_to_delete = tmp_path / session_id / step_id
+        assert not step_path_to_delete.exists()
+
+        await sm.delete_step(session_id, step_id) # Should not raise, just log
+        assert not step_path_to_delete.exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_step_local_os_error(self, local_sm_real_fs, tmp_path):
+        sm = local_sm_real_fs
+        sm._local_base_path = tmp_path
+        session_id, step_id = "localSessOSError", "localStepOSError"
+        self._setup_local_dir_structure(tmp_path, {session_id: [step_id]})
+        step_path_to_delete = tmp_path / session_id / step_id
+
+        with patch("shutil.rmtree", side_effect=OSError("Permission denied")):
+             with pytest.raises(LocalStorageError, match=f"Failed to delete local step {str(step_path_to_delete)}"):
+                await sm.delete_step(session_id, step_id)
+        assert step_path_to_delete.exists() # Should still exist if rmtree failed
+
+    @pytest.mark.asyncio
+    async def test_delete_session_s3_success(self, mock_s3_sm):
+        sm, mock_client = mock_s3_sm
+        session_id = "fullSessDel1"
+        prefix_to_delete = f"{session_id}/"
+        mock_paginator = MagicMock()
+        mock_client.get_paginator.return_value = mock_paginator
+        mock_paginator.paginate.return_value = [
+            {"Contents": [{"Key": f"{prefix_to_delete}step1/fileA.txt"}, {"Key": f"{prefix_to_delete}step2/fileB.txt"}] }
+        ]
+        mock_client.delete_objects.return_value = {}
+
+        await sm.delete_session(session_id)
+        mock_client.delete_objects.assert_called_once_with(
+            Bucket=sm.s3_bucket_name,
+            Delete={
+                'Objects': [
+                    {'Key': f"{prefix_to_delete}step1/fileA.txt"},
+                    {'Key': f"{prefix_to_delete}step2/fileB.txt"},
+                ],
+                'Quiet': True
+            }
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_session_local_success(self, local_sm_real_fs, tmp_path):
+        sm = local_sm_real_fs
+        sm._local_base_path = tmp_path
+        session_to_delete = "localFullSessDel1"
+        other_session = "localOtherSess"
+        self._setup_local_dir_structure(tmp_path, {
+            session_to_delete: ["stepA", "stepB"],
+            other_session: ["stepC"]
+        })
+        
+        session_path_to_delete = tmp_path / session_to_delete
+        other_session_path = tmp_path / other_session
+        assert session_path_to_delete.exists()
+        assert other_session_path.exists()
+
+        await sm.delete_session(session_to_delete)
+
+        assert not session_path_to_delete.exists()
+        assert other_session_path.exists() # Ensure other session is untouched 
