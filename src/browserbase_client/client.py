@@ -19,7 +19,10 @@ class BrowserbaseClient:
         self, 
         api_key: Optional[str] = None, 
         base_url: Optional[str] = None, 
-        timeout_seconds: Optional[Union[float, int]] = None
+        timeout_seconds: Optional[Union[float, int]] = None,
+        max_retries: Optional[int] = None,
+        retry_delay_seconds: Optional[Union[float, int]] = None,
+        max_backoff_delay_seconds: Optional[Union[float, int]] = None
     ):
         """
         Initialize the BrowserbaseClient.
@@ -37,6 +40,14 @@ class BrowserbaseClient:
             timeout_seconds: Default timeout in seconds for HTTP requests. If None,
                              attempts to load from env var BROWSERBASE_DEFAULT_TIMEOUT_SECONDS,
                              then uses default.
+            max_retries: Maximum number of retries for failed requests. If None,
+                         attempts to load from env var BROWSERBASE_MAX_RETRIES, then uses default.
+            retry_delay_seconds: Delay in seconds between retries. If None,
+                                 attempts to load from env var BROWSERBASE_RETRY_DELAY_SECONDS,
+                                 then uses default.
+            max_backoff_delay_seconds: Maximum delay in seconds for exponential backoff. If None,
+                                       attempts to load from env var BROWSERBASE_MAX_BACKOFF_DELAY_SECONDS,
+                                       then uses default.
         Raises:
             ValueError: If API key is not provided and cannot be found in environment variables.
         """
@@ -50,9 +61,14 @@ class BrowserbaseClient:
         self.auth_strategy: AuthStrategy = ApiKeyAuth(resolved_api_key)
         self.base_url = config.get_base_url(base_url_override=base_url)
         self.timeout_seconds = config.get_default_timeout_seconds(timeout_override=timeout_seconds)
+        self.max_retries = config.get_max_retries(retries_override=max_retries)
+        self.retry_delay_seconds = config.get_retry_delay_seconds(delay_override=retry_delay_seconds)
+        self.max_backoff_delay_seconds = config.get_max_backoff_delay_seconds(delay_override=max_backoff_delay_seconds)
         
         logger.info(
-            f"BrowserbaseClient initialized. Base URL: {self.base_url}, Timeout: {self.timeout_seconds}s"
+            f"BrowserbaseClient initialized. Base URL: {self.base_url}, Timeout: {self.timeout_seconds}s, "
+            f"Max Retries: {self.max_retries}, Retry Delay: {self.retry_delay_seconds}s, "
+            f"Max Backoff Delay: {self.max_backoff_delay_seconds}s"
         )
 
     def _get_headers(self) -> Dict[str, str]:
@@ -69,7 +85,7 @@ class BrowserbaseClient:
         payload: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> dict:
-        """Makes an asynchronous HTTP request to the Browserbase API."""
+        """Makes an asynchronous HTTP request to the Browserbase API with retry logic."""
         headers = self._get_headers()
         url = endpoint  # endpoint is already the full URL in current methods
         request_details = f"Request: {method} {url}"
@@ -77,42 +93,89 @@ class BrowserbaseClient:
             request_details += f" Params: {params}"
         if payload:
             # Avoid logging full payload if it's large or sensitive; consider truncation or selective logging
-            request_details += f" Payload: {payload}"
+            request_details += f" Payload: {str(payload)[:200]}..." # Truncate payload logging
         logger.debug(request_details)
 
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-                response = await client.request(
-                    method, url, json=payload, headers=headers, params=params
-                )
-                response.raise_for_status()  # Raises HTTPStatusError for 4xx/5xx
-                # Handle cases where API might return 204 No Content or other non-JSON success
-                if response.status_code == 204:
-                    logger.debug(
-                        f"Response: {method} {url} - Status {response.status_code} (No Content)"
+        attempts = 0
+        # MAX_ATTEMPTS will use self.max_retries
+        # RETRY_DELAY will use self.retry_delay_seconds as a base for exponential backoff
+        # MAX_EXPONENTIAL_BACKOFF_DELAY_SECONDS = 60.0 # Cap for exponential backoff -- Will use self.max_backoff_delay_seconds
+
+        while attempts < self.max_retries:
+            try:
+                logger.debug(f"Attempt {attempts + 1}/{self.max_retries} for {method} {url}")
+                async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                    response = await client.request(
+                        method, url, json=payload, headers=headers, params=params
                     )
-                    return {}  # Return an empty dict for No Content
-                
-                response_data = response.json()
-                logger.debug(
-                    f"Response: {method} {url} - Status {response.status_code} - Data: {str(response_data)[:200]}..."
+                    response.raise_for_status()  # Raises HTTPStatusError for 4xx/5xx
+                    
+                    # Handle cases where API might return 204 No Content or other non-JSON success
+                    if response.status_code == 204:
+                        logger.debug(
+                            f"Response: {method} {url} - Status {response.status_code} (No Content)"
+                        )
+                        return {}  # Return an empty dict for No Content
+                    
+                    response_data = response.json()
+                    logger.debug(
+                        f"Response: {method} {url} - Status {response.status_code} - Data: {str(response_data)[:200]}..."
+                    )
+                    return response_data # Success, exit loop and method
+
+            except httpx.HTTPStatusError as e:
+                logger.warning(
+                    f"API Error on attempt {attempts + 1}/{self.max_retries}: {method} {url} - Status {e.response.status_code} - Response: {e.response.text[:200]}..."
                 )
-                return response_data
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                f"API Error: {method} {url} - Status {e.response.status_code} - Response: {e.response.text}",
-                exc_info=True,
-            )
-            raise BrowserbaseAPIError(
-                message=f"API request failed: {e.response.status_code}",
-                status_code=e.response.status_code,
-                response_content=e.response.text,
-            ) from e
-        except httpx.RequestError as e:
-            logger.error(f"Request Error: {method} {url} - {e}", exc_info=True)
-            raise BrowserbaseAPIError(
-                message=f"Request failed: {e.__class__.__name__}"
-            ) from e
+                # Retry only on 5xx server errors
+                if e.response.status_code >= 500 and (attempts + 1) < self.max_retries:
+                    # Calculate delay for next attempt using exponential backoff
+                    # attempts is 0-indexed here, so for the first retry (attempts=0), delay is base_delay * 2^0
+                    # for the second retry (attempts=1), delay is base_delay * 2^1, and so on.
+                    current_delay = min(self.retry_delay_seconds * (2 ** attempts), self.max_backoff_delay_seconds)
+                    attempts += 1
+                    logger.info(f"Retrying in {current_delay:.2f}s... (new attempt {attempts + 1}/{self.max_retries})")
+                    await asyncio.sleep(current_delay)
+                    continue # To next iteration of the while loop
+                else:
+                    # Not a 5xx error, or max attempts reached for 5xx
+                    final_attempts = attempts + 1
+                    logger.error(
+                        f"Final API Error after {final_attempts} attempt(s): {method} {url} - Status {e.response.status_code} - Response: {e.response.text}",
+                        exc_info=True,
+                    )
+                    raise BrowserbaseAPIError(
+                        message=f"API request failed after {final_attempts} attempt(s) with status {e.response.status_code}",
+                        status_code=e.response.status_code,
+                        response_content=e.response.text,
+                    ) from e # This will break the loop
+            
+            except httpx.RequestError as e: # Includes TimeoutException, ConnectError etc.
+                logger.warning(
+                    f"Request Error on attempt {attempts + 1}/{self.max_retries}: {method} {url} - {e}"
+                )
+                if (attempts + 1) < self.max_retries:
+                    # Calculate delay for next attempt using exponential backoff
+                    current_delay = min(self.retry_delay_seconds * (2 ** attempts), self.max_backoff_delay_seconds)
+                    attempts += 1
+                    logger.info(f"Retrying in {current_delay:.2f}s... (new attempt {attempts + 1}/{self.max_retries})")
+                    await asyncio.sleep(current_delay)
+                    continue # To next iteration of the while loop
+                else:
+                    final_attempts = attempts + 1
+                    logger.error(
+                        f"Final Request Error after {final_attempts} attempt(s): {method} {url} - {e}",
+                        exc_info=True,
+                    )
+                    raise BrowserbaseAPIError(
+                        message=f"Request failed after {final_attempts} attempt(s): {e.__class__.__name__}"
+                    ) from e # This will break the loop
+        
+        # This line should theoretically be unreachable if the logic above is correct,
+        # as any path leading to loop exhaustion should have raised an exception.
+        # Adding a safeguard, though it indicates a potential logic flaw if ever hit.
+        logger.critical(f"Reached end of _request method for {method} {url} after {self.max_retries} attempts without returning or raising explicitly within the loop. This should not happen.")
+        raise BrowserbaseAPIError(message=f"Max retries ({self.max_retries}) reached for {method} {url} without explicit resolution.")
 
     async def create_session(self, project_id: str, **kwargs: CreateSessionKwargs) -> dict:
         """

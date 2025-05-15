@@ -248,7 +248,7 @@ async def test_get_session_downloads_server_error(client: BrowserbaseClient, res
     """Test get_session_downloads with a server error (500)."""
     session_id = "session_server_error_id_downloads"
     expected_url = f"{client.base_url}/sessions/{session_id}/downloads"
-    error_response = {"message": "Internal Server Error during downloads retrieval"}
+    error_response = {"message": "Internal Server Error"}
 
     respx_mock.get(expected_url).respond(status_code=500, json=error_response)
 
@@ -264,13 +264,177 @@ async def test_get_session_downloads_no_session_id(client: BrowserbaseClient):
     with pytest.raises(ValueError, match="session_id must be provided"):
         await client.get_session_downloads("")
 
-# Placeholder for future tests if client needs explicit closing
-# @pytest.mark.asyncio
-# async def test_client_close(client: BrowserbaseClient):
-#     """Test the client's close method."""
-#     await client.close()
-#     # Add assertions if close performs actions, e.g., closing a persistent http client
-#     pass
+# Tests for _request retry mechanism
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.sleep", return_value=None) # Mock asyncio.sleep
+async def test_request_successful_no_retry(mock_sleep, client: BrowserbaseClient, respx_mock: RESPXMock, caplog: pytest.LogCaptureFixture):
+    """Test that a successful request does not trigger any retries."""
+    caplog.set_level(logging.DEBUG, logger="browserbase_client.client")
+    session_id = "sess_no_retry"
+    expected_url = f"{client.base_url}/sessions/{session_id}"
+    mock_response_data = {"sessionId": session_id, "status": "ACTIVE"}
+
+    respx_mock.get(expected_url).respond(status_code=200, json=mock_response_data)
+
+    response = await client.get_session(session_id)
+    assert response == mock_response_data
+    mock_sleep.assert_not_called() # Ensure sleep was not called
+    assert f"Attempt 1/{client.max_retries}" in caplog.text
+    assert "Retrying in" not in caplog.text
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.sleep", return_value=None) # Mock asyncio.sleep
+async def test_retry_on_5xx_then_success(mock_sleep, client: BrowserbaseClient, respx_mock: RESPXMock, caplog: pytest.LogCaptureFixture):
+    """Test retry on a 500 error, then success on the next attempt."""
+    caplog.set_level(logging.INFO, logger="browserbase_client.client") # INFO to see retry messages
+    session_id = "sess_5xx_retry"
+    expected_url = f"{client.base_url}/sessions/{session_id}"
+    success_response_data = {"sessionId": session_id, "status": "ACTIVE"}
+
+    # Simulate 500 error then 200 success
+    respx_mock.get(expected_url).mock(
+        side_effect=[
+            httpx.Response(500, json={"error": "Internal Server Error"}),
+            httpx.Response(200, json=success_response_data),
+        ]
+    )
+
+    response = await client.get_session(session_id)
+    assert response == success_response_data
+
+    # Check that sleep was called once with the base delay (2**0 * base_delay)
+    mock_sleep.assert_called_once_with(client.retry_delay_seconds * (2**0))
+    assert f"Attempt 1/{client.max_retries}" in caplog.text
+    assert f"API Error on attempt 1/{client.max_retries}" in caplog.text
+    assert f"Retrying in {client.retry_delay_seconds:.2f}s... (new attempt 2/{client.max_retries})" in caplog.text
+    assert f"Attempt 2/{client.max_retries}" in caplog.text # Should show attempt 2
+    assert f"Response: GET {expected_url} - Status 200" in caplog.text
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.sleep", return_value=None) # Mock asyncio.sleep
+async def test_no_retry_on_4xx_client_error(mock_sleep, client: BrowserbaseClient, respx_mock: RESPXMock, caplog: pytest.LogCaptureFixture):
+    """Test that a 4xx client error does not trigger retries."""
+    caplog.set_level(logging.DEBUG, logger="browserbase_client.client")
+    session_id = "sess_4xx_no_retry"
+    expected_url = f"{client.base_url}/sessions/{session_id}"
+    error_response_data = {"error": "Not Found"}
+
+    respx_mock.get(expected_url).respond(status_code=404, json=error_response_data)
+
+    with pytest.raises(BrowserbaseAPIError) as excinfo:
+        await client.get_session(session_id)
+    
+    assert excinfo.value.status_code == 404
+    mock_sleep.assert_not_called() # Ensure sleep was not called
+    assert f"Attempt 1/{client.max_retries}" in caplog.text
+    assert "Retrying in" not in caplog.text
+    assert f"Final API Error after 1 attempt(s)" in caplog.text
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.sleep", return_value=None)
+async def test_retry_on_request_error_then_success(mock_sleep, client: BrowserbaseClient, respx_mock: RESPXMock, caplog: pytest.LogCaptureFixture):
+    """Test retry on httpx.RequestError (e.g., ConnectError), then success."""
+    caplog.set_level(logging.INFO, logger="browserbase_client.client")
+    session_id = "sess_req_err_retry"
+    expected_url = f"{client.base_url}/sessions/{session_id}"
+    success_response_data = {"sessionId": session_id, "status": "ACTIVE"}
+
+    respx_mock.get(expected_url).mock(
+        side_effect=[
+            httpx.ConnectError("Simulated connection failed"),
+            httpx.Response(200, json=success_response_data),
+        ]
+    )
+
+    response = await client.get_session(session_id)
+    assert response == success_response_data
+    mock_sleep.assert_called_once_with(client.retry_delay_seconds * (2**0))
+    assert f"Request Error on attempt 1/{client.max_retries}" in caplog.text
+    assert f"Retrying in {client.retry_delay_seconds:.2f}s... (new attempt 2/{client.max_retries})" in caplog.text
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.sleep", return_value=None)
+async def test_retry_exhaustion_for_5xx_error(mock_sleep, client_low_retries: BrowserbaseClient, respx_mock: RESPXMock, caplog: pytest.LogCaptureFixture):
+    """Test that retries are exhausted for persistent 5xx errors."""
+    # Using client_low_retries fixture (max_retries=1 by default in conftest or override for this test)
+    # If client_low_retries not specifically configured for 1 retry, this will use default client's max_retries
+    # For this test to be meaningful, client_low_retries should have max_retries=1 or 2.
+    # We will assume client_low_retries is configured for client.max_retries = 1 for this test case to be simple.
+    # If not, we can create a new client with max_retries=1 for this test.
+    
+    # Let's create a client with specific max_retries for this test to be explicit
+    client_one_retry = BrowserbaseClient(api_key="test_key_one_retry", max_retries=1, retry_delay_seconds=0.1)
+    caplog.set_level(logging.INFO, logger="browserbase_client.client")
+    session_id = "sess_exhaust_5xx"
+    expected_url = f"{client_one_retry.base_url}/sessions/{session_id}"
+
+    respx_mock.get(expected_url).respond(status_code=503, json={"error": "Service Unavailable"})
+
+    with pytest.raises(BrowserbaseAPIError) as excinfo:
+        await client_one_retry.get_session(session_id)
+    
+    assert excinfo.value.status_code == 503
+    # With max_retries=1, there should be 1 attempt, and 0 calls to sleep.
+    mock_sleep.assert_not_called()
+    assert f"API Error on attempt 1/{client_one_retry.max_retries}" in caplog.text
+    assert "Retrying in" not in caplog.text # No retry should happen as max_retries is 1
+    assert f"Final API Error after {client_one_retry.max_retries} attempt(s)" in caplog.text
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.sleep", return_value=None)
+async def test_retry_exhaustion_for_request_error(mock_sleep, client_low_retries: BrowserbaseClient, respx_mock: RESPXMock, caplog: pytest.LogCaptureFixture):
+    """Test that retries are exhausted for persistent httpx.RequestError."""
+    client_one_retry = BrowserbaseClient(api_key="test_key_req_exh", max_retries=1, retry_delay_seconds=0.1)
+    caplog.set_level(logging.INFO, logger="browserbase_client.client")
+    session_id = "sess_exhaust_req_err"
+    expected_url = f"{client_one_retry.base_url}/sessions/{session_id}"
+
+    respx_mock.get(expected_url).mock(side_effect=httpx.TimeoutException("Simulated timeout"))
+
+    with pytest.raises(BrowserbaseAPIError) as excinfo:
+        await client_one_retry.get_session(session_id)
+    
+    assert excinfo.value.status_code is None # No HTTP status for this type of error
+    assert "TimeoutException" in str(excinfo.value.message) 
+    mock_sleep.assert_not_called() # max_retries=1 means no actual retry sleep
+    assert f"Request Error on attempt 1/{client_one_retry.max_retries}" in caplog.text
+    assert "Retrying in" not in caplog.text
+    assert f"Final Request Error after {client_one_retry.max_retries} attempt(s)" in caplog.text
+
+@pytest.mark.asyncio
+@mock.patch("asyncio.sleep", return_value=None)
+async def test_exponential_backoff_multiple_retries(mock_sleep, client: BrowserbaseClient, respx_mock: RESPXMock, caplog: pytest.LogCaptureFixture):
+    """Test exponential backoff calculation over multiple retries."""
+    # Ensure client used for this test has at least 3 retries
+    client_three_retries = BrowserbaseClient(api_key="test_key_exp_backoff", max_retries=3, retry_delay_seconds=0.1)
+    caplog.set_level(logging.INFO, logger="browserbase_client.client")
+    session_id = "sess_exp_backoff"
+    expected_url = f"{client_three_retries.base_url}/sessions/{session_id}"
+    success_response_data = {"sessionId": session_id, "status": "ACTIVE"}
+
+    respx_mock.get(expected_url).mock(
+        side_effect=[
+            httpx.Response(500, json={"error": "Server Error 1"}),
+            httpx.Response(500, json={"error": "Server Error 2"}),
+            httpx.Response(200, json=success_response_data), # Success on 3rd attempt (after 2 retries)
+        ]
+    )
+
+    response = await client_three_retries.get_session(session_id)
+    assert response == success_response_data
+
+    expected_delays = [
+        client_three_retries.retry_delay_seconds * (2**0), # Delay after 1st attempt failure
+        client_three_retries.retry_delay_seconds * (2**1)  # Delay after 2nd attempt failure
+    ]
+    # Check that sleep was called with the correct sequence of delays
+    assert mock_sleep.call_count == 2
+    assert mock_sleep.call_args_list[0] == mock.call(expected_delays[0])
+    assert mock_sleep.call_args_list[1] == mock.call(expected_delays[1])
+
+    assert f"Retrying in {expected_delays[0]:.2f}s... (new attempt 2/{client_three_retries.max_retries})" in caplog.text
+    assert f"Retrying in {expected_delays[1]:.2f}s... (new attempt 3/{client_three_retries.max_retries})" in caplog.text
 
 @pytest.mark.asyncio
 async def test_release_session_failure_server_error(client: BrowserbaseClient, respx_mock: RESPXMock, caplog: pytest.LogCaptureFixture):
