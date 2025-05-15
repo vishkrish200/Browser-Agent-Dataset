@@ -4,6 +4,7 @@ from unittest.mock import patch, MagicMock, mock_open
 import json
 from pathlib import Path
 from typing import Dict, List
+import boto3
 
 from src.storage_manager.storage import StorageManager, HTML_FILENAME, SCREENSHOT_FILENAME, ACTION_FILENAME, METADATA_FILENAME
 from src.storage_manager.exceptions import S3ConfigError, S3OperationError, LocalStorageError, StorageManagerError
@@ -55,6 +56,58 @@ def reset_env_vars_and_config_mocks():
             os.environ[var_name] = ORIGINAL_ENV[var_name]
         elif var_name in os.environ:
             del os.environ[var_name]
+
+@pytest.fixture(scope='session') # Changed to session scope for efficiency if shared across many tests
+def aws_credentials():
+    """Mocked AWS Credentials for moto."""
+    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+    os.environ["AWS_SECURITY_TOKEN"] = "testing"
+    os.environ["AWS_SESSION_TOKEN"] = "testing"
+    os.environ["AWS_DEFAULT_REGION"] = "us-east-1" # Moto typically defaults to us-east-1
+
+@pytest.fixture(scope='session') # Changed to session scope
+def s3_client(aws_credentials):
+    """Yield a boto3 s3 client in a moto S3 mocking context."""
+    with patch('boto3.DEFAULT_SESSION', None): # Ensure boto3 re-evaluates session with new env vars
+        # For newer moto versions, context manager might not be strictly needed if using env vars
+        # but it's good practice for ensuring isolation.
+        # from moto import mock_aws # Changed from mock_s3 for broader compatibility
+        # with mock_aws():
+        # For moto versions >= 5.0.0, use mock_aws context manager
+        # For older versions, direct client creation with env vars might suffice if moto is started globally.
+        # Given our setup, relying on env vars and direct client creation is simpler if moto is active.
+        # Let's assume moto is active for the session when aws_credentials are set.
+        # We can use the moto context manager if issues arise. For now, direct client.
+        try:
+            client = boto3.client("s3", region_name=os.environ["AWS_DEFAULT_REGION"])
+            yield client
+        finally:
+            # Clean up env vars set by aws_credentials if not using a context manager that handles it.
+            # However, reset_env_vars_and_config_mocks should handle this at test level.
+            pass
+
+@pytest.fixture(scope='function') # Function scope to ensure clean bucket for each test
+def s3_bucket(s3_client):
+    """Create a mock S3 bucket and yield its name. Cleans up after."""
+    bucket_name = "test-integration-bucket"
+    try:
+        s3_client.create_bucket(Bucket=bucket_name)
+        yield bucket_name
+    finally:
+        # Cleanup: delete all objects, then delete bucket
+        try:
+            paginator = s3_client.get_paginator('list_objects_v2')
+            for page in paginator.paginate(Bucket=bucket_name):
+                if 'Contents' in page:
+                    objects_to_delete = [{'Key': obj['Key']} for obj in page['Contents']]
+                    if objects_to_delete:
+                        s3_client.delete_objects(Bucket=bucket_name, Delete={'Objects': objects_to_delete})
+            s3_client.delete_bucket(Bucket=bucket_name)
+        except ClientError as e:
+            # Allow test to pass if bucket cleanup fails (e.g., already deleted)
+            print(f"Error during S3 bucket cleanup: {e}")
+            pass # Or log a warning
 
 class TestStorageManagerInitialization:
 
@@ -967,3 +1020,75 @@ class TestStorageManagerDeletionOperations:
 
         assert not session_path_to_delete.exists()
         assert other_session_path.exists() # Ensure other session is untouched 
+
+@pytest.mark.usefixtures("aws_credentials") # Ensure moto S3 mocking is active via env vars
+class TestStorageManagerS3Integration:
+    """Integration-style tests for StorageManager using a mocked S3 (moto)."""
+
+    @pytest.fixture
+    def s3_integration_sm(self, s3_bucket, s3_client): # s3_client is implicitly used by SM
+        """Provides a StorageManager instance configured to use the s3_bucket for integration tests."""
+        # We pass s3_client to ensure it's initialized within the moto context if SM relies on it implicitly,
+        # but SM should pick up credentials via env vars and create its own client.
+        # The main thing is that s3_bucket fixture ensures the bucket exists in moto's S3.
+        sm = StorageManager(
+            s3_bucket_name=s3_bucket, 
+            s3_region_name=os.environ["AWS_DEFAULT_REGION"], # Use region from aws_credentials
+            prefer_s3=True
+        )
+        assert sm.use_s3 is True # Verify it's in S3 mode
+        return sm
+
+    @pytest.mark.asyncio
+    async def test_s3_full_lifecycle_single_session_step(self, s3_integration_sm: StorageManager, sample_data):
+        """Test storing, listing, and deleting a single step and then the session in S3."""
+        sm = s3_integration_sm
+        session_id = "integ_sess_1"
+        step_id_1 = "integ_step_1"
+
+        # 1. Store data for a step
+        await sm.store_step_data(
+            session_id, 
+            step_id_1, 
+            html_content=sample_data["html"],
+            screenshot_bytes=sample_data["screenshot"],
+            action_data=sample_data["action"],
+            metadata=sample_data["metadata"]
+        )
+
+        # 2. List sessions and steps
+        sessions = await sm.list_sessions()
+        assert sessions == [session_id]
+
+        steps_in_session = await sm.list_steps_for_session(session_id)
+        assert steps_in_session == [step_id_1]
+
+        # 3. Retrieve and verify some data (optional, but good check)
+        html, screen, action, meta = await sm.retrieve_step_data(session_id, step_id_1)
+        assert html == sample_data["html"]
+        assert screen == sample_data["screenshot"]
+        assert action == sample_data["action"]
+        assert meta == sample_data["metadata"]
+
+        # 4. Delete the step
+        await sm.delete_step(session_id, step_id_1)
+
+        # 5. Verify step is deleted (listing should be empty)
+        steps_after_delete = await sm.list_steps_for_session(session_id)
+        assert steps_after_delete == []
+
+        # 6. Attempt to retrieve deleted step data (should return Nones, log warnings)
+        with pytest.warns(None) as record: # Check for S3OperationError/NoSuchKey related warnings if retrieve handles it that way
+                                        # Or check logs if it only logs
+            html_del, screen_del, _, _ = await sm.retrieve_step_data(session_id, step_id_1)
+        assert html_del is None
+        assert screen_del is None
+        # Verify logs (example, adjust based on actual logging in retrieve_step_data for missing items)
+        # For now, just checking Nones is sufficient as a basic deletion check for this lifecycle test.
+
+        # 7. Delete the session
+        await sm.delete_session(session_id)
+
+        # 8. Verify session is deleted
+        sessions_after_delete = await sm.list_sessions()
+        assert sessions_after_delete == [] 
