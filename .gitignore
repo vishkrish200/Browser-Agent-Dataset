@@ -25,6 +25,10 @@ node_modules/
 .DS_Store
 
 # Task files
+tasks
+tasks/tasks.json
+.taskmasterconfig
+scripts/task-complexity-report.json
 
 # Virtual environment
 .venv/
