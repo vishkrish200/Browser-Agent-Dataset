@@ -162,31 +162,52 @@ class StorageManager:
         os.makedirs(step_dir, exist_ok=True)
         return os.path.join(step_dir, filename)
 
-    def _upload_to_s3(self, data: Union[str, bytes], s3_key: str, content_type: Optional[str] = None) -> str:
-        """Uploads data (bytes or string) to S3.
-
-        String data is encoded to UTF-8 before uploading.
+    def object_exists_s3(self, s3_key: str) -> bool:
+        """
+        Checks if an object exists in the S3 bucket.
 
         Args:
-            data: The data to upload (string or bytes).
-            s3_key: The S3 key (path) where the data will be stored.
-            content_type: Optional. The MIME type of the content (e.g., 'text/html').
+            s3_key: The S3 key of the object.
 
         Returns:
-            The S3 URL of the uploaded object (e.g., 's3://bucket_name/key').
+            True if the object exists, False otherwise.
 
         Raises:
             S3ConfigError: If the S3 client cannot be initialized.
-            S3OperationError: If the S3 `put_object` operation fails.
-            StorageManagerError: For other unexpected errors during the upload process.
+            S3OperationError: For S3 client errors other than 404 during head_object.
         """
-        s3_client = self._get_s3_client() # Ensures S3 is configured and client is available
+        if not self.use_s3:
+            logger.debug(f"object_exists_s3 called but S3 is not in use. Key: {s3_key}")
+            return False # Or raise an error, depending on desired behavior
+        
+        s3_client = self._get_s3_client()
+        try:
+            s3_client.head_object(Bucket=self.s3_bucket_name, Key=s3_key)
+            logger.debug(f"Object exists in S3: s3://{self.s3_bucket_name}/{s3_key}")
+            return True
+        except ClientError as e:
+            if e.response['Error']['Code'] == "404" or e.response['Error']['Code'] == "NoSuchKey":
+                logger.debug(f"Object does not exist in S3 (404): s3://{self.s3_bucket_name}/{s3_key}")
+                return False
+            else:
+                logger.error(f"Error checking S3 object existence for key {s3_key}: {e}", exc_info=True)
+                raise S3OperationError(f"Failed to check existence of S3 object {s3_key}: {e}") from e
+        except Exception as e:
+            logger.error(f"Unexpected error checking S3 object existence for key {s3_key}: {e}", exc_info=True)
+            raise StorageManagerError(f"Unexpected error checking S3 object existence {s3_key}: {e}") from e
+
+    async def _upload_to_s3(self, data: Union[str, bytes], s3_key: str, content_type: Optional[str] = None) -> str:
+        """Uploads data (bytes or string) to S3. (Async wrapper)"""
+        # The actual s3_client.put_object call is blocking.
+        # For true async, use aiobotocore or run in executor.
+        s3_client = self._get_s3_client()
         try:
             body_data = data.encode('utf-8') if isinstance(data, str) else data
             extra_args = {}
             if content_type:
                 extra_args['ContentType'] = content_type
             
+            # This is a blocking call
             s3_client.put_object(
                 Bucket=self.s3_bucket_name, 
                 Key=s3_key, 
@@ -199,29 +220,17 @@ class StorageManager:
         except ClientError as e:
             logger.error(f"S3 put_object failed for key {s3_key}: {e}", exc_info=True)
             raise S3OperationError(f"S3 upload failed for key {s3_key}", operation="upload", original_exception=e) from e
-        except Exception as e: # Catch any other unexpected errors
+        except Exception as e:
             logger.error(f"Unexpected error during S3 upload for key {s3_key}: {e}", exc_info=True)
             raise StorageManagerError(f"Unexpected error during S3 upload for {s3_key}: {e}") from e
 
-    def _write_to_local(self, data: Union[str, bytes], local_path: str) -> str:
-        """Writes data (bytes or string) to a local file.
-
-        String data is written as UTF-8.
-
-        Args:
-            data: The data to write (string or bytes).
-            local_path: The absolute or relative local file path.
-
-        Returns:
-            The absolute path to the written file.
-
-        Raises:
-            LocalStorageError: If an IOError occurs during file writing.
-            StorageManagerError: For other unexpected errors during the write process.
-        """
+    async def _write_to_local(self, data: Union[str, bytes], local_path: str) -> str:
+        """Writes data (bytes or string) to a local file. (Async wrapper)"""
+        # The actual open().write() is blocking.
         try:
             mode = 'wb' if isinstance(data, bytes) else 'w'
             encoding = None if isinstance(data, bytes) else 'utf-8'
+            # This is a blocking call context
             with open(local_path, mode, encoding=encoding) as f:
                 f.write(data)
             abs_path = os.path.abspath(local_path)
@@ -230,27 +239,16 @@ class StorageManager:
         except IOError as e:
             logger.error(f"IOError writing to local file {local_path}: {e}", exc_info=True)
             raise LocalStorageError(f"Failed to write to local file {local_path}: {e}") from e
-        except Exception as e: # Catch any other unexpected errors
+        except Exception as e:
             logger.error(f"Unexpected error writing to local file {local_path}: {e}", exc_info=True)
             raise StorageManagerError(f"Unexpected error writing to {local_path}: {e}") from e
 
-    def _download_from_s3(self, s3_key: str) -> bytes:
-        """Downloads data from S3.
-
-        Args:
-            s3_key: The S3 key (path) of the object to download.
-
-        Returns:
-            The downloaded data as bytes.
-
-        Raises:
-            S3ConfigError: If the S3 client cannot be initialized.
-            S3OperationError: If the S3 `get_object` operation fails (e.g., NoSuchKey,
-                              or other client errors).
-            StorageManagerError: For other unexpected errors during the download process.
-        """
+    async def _download_from_s3(self, s3_key: str) -> bytes:
+        """Downloads data from S3. (Async wrapper)"""
+        # The actual s3_client.get_object().read() is blocking.
         s3_client = self._get_s3_client()
         try:
+            # This is a blocking call
             response = s3_client.get_object(Bucket=self.s3_bucket_name, Key=s3_key)
             data_bytes = response['Body'].read()
             logger.debug(f"Successfully downloaded data from s3://{self.s3_bucket_name}/{s3_key}")
@@ -265,27 +263,18 @@ class StorageManager:
             logger.error(f"Unexpected error during S3 download for key {s3_key}: {e}", exc_info=True)
             raise StorageManagerError(f"Unexpected error during S3 download for {s3_key}: {e}") from e
 
-    def _read_from_local(self, local_path: str) -> bytes:
-        """Reads data from a local file.
-
-        Args:
-            local_path: The absolute or relative local file path to read from.
-
-        Returns:
-            The file content as bytes.
-
-        Raises:
-            LocalStorageError: If the file is not found or an IOError occurs during reading.
-            StorageManagerError: For other unexpected errors during the read process.
-        """
+    async def _read_from_local(self, local_path: str) -> bytes:
+        """Reads data from a local file. (Async wrapper)"""
+        # The actual open().read() is blocking.
         try:
+            # This is a blocking call context
             with open(local_path, 'rb') as f:
                 data_bytes = f.read()
             logger.debug(f"Successfully read data from local file: {local_path}")
             return data_bytes
         except FileNotFoundError:
             logger.warning(f"Local file not found: {local_path}")
-            raise LocalStorageError(f"Local file not found: {local_path}") from None # Explicitly from None as FileNotFoundError is the direct cause
+            raise LocalStorageError(f"Local file not found: {local_path}") from None
         except IOError as e:
             logger.error(f"IOError reading from local file {local_path}: {e}", exc_info=True)
             raise LocalStorageError(f"Failed to read from local file {local_path}: {e}") from e
@@ -369,40 +358,40 @@ class StorageManager:
                 content_type = 'text/html'
                 if self.use_s3:
                     s3_key = self._get_s3_key(session_id, step_id, HTML_FILENAME)
-                    paths["html_path"] = self._upload_to_s3(html_content, s3_key, content_type)
+                    paths["html_path"] = await self._upload_to_s3(html_content, s3_key, content_type)
                 else:
                     local_path = self._get_local_path(session_id, step_id, HTML_FILENAME)
-                    paths["html_path"] = self._write_to_local(html_content, local_path)
+                    paths["html_path"] = await self._write_to_local(html_content, local_path)
 
             if screenshot_bytes is not None:
                 # Assuming PNG for now, ContentType can be refined if image format is known
                 content_type = 'image/png' 
                 if self.use_s3:
                     s3_key = self._get_s3_key(session_id, step_id, SCREENSHOT_FILENAME)
-                    paths["screenshot_path"] = self._upload_to_s3(screenshot_bytes, s3_key, content_type)
+                    paths["screenshot_path"] = await self._upload_to_s3(screenshot_bytes, s3_key, content_type)
                 else:
                     local_path = self._get_local_path(session_id, step_id, SCREENSHOT_FILENAME)
-                    paths["screenshot_path"] = self._write_to_local(screenshot_bytes, local_path)
+                    paths["screenshot_path"] = await self._write_to_local(screenshot_bytes, local_path)
             
             if action_data is not None:
                 action_json_str = json.dumps(action_data, indent=2)
                 content_type = 'application/json'
                 if self.use_s3:
                     s3_key = self._get_s3_key(session_id, step_id, ACTION_DATA_FILENAME)
-                    paths["action_data_path"] = self._upload_to_s3(action_json_str, s3_key, content_type)
+                    paths["action_data_path"] = await self._upload_to_s3(action_json_str, s3_key, content_type)
                 else:
                     local_path = self._get_local_path(session_id, step_id, ACTION_DATA_FILENAME)
-                    paths["action_data_path"] = self._write_to_local(action_json_str, local_path)
+                    paths["action_data_path"] = await self._write_to_local(action_json_str, local_path)
 
             if metadata is not None:
                 metadata_json_str = json.dumps(metadata, indent=2)
                 content_type = 'application/json'
                 if self.use_s3:
                     s3_key = self._get_s3_key(session_id, step_id, METADATA_FILENAME)
-                    paths["metadata_path"] = self._upload_to_s3(metadata_json_str, s3_key, content_type)
+                    paths["metadata_path"] = await self._upload_to_s3(metadata_json_str, s3_key, content_type)
                 else:
                     local_path = self._get_local_path(session_id, step_id, METADATA_FILENAME)
-                    paths["metadata_path"] = self._write_to_local(metadata_json_str, local_path)
+                    paths["metadata_path"] = await self._write_to_local(metadata_json_str, local_path)
             
             logger.info(f"Stored data for session {session_id}, step {step_id}. Paths: {paths}")
             return paths
@@ -456,12 +445,12 @@ class StorageManager:
             try:
                 if self.use_s3:
                     s3_key = self._get_s3_key(session_id, step_id, filename)
-                    raw_data = self._download_from_s3(s3_key)
+                    raw_data = await self._download_from_s3(s3_key)
                 else:
                     local_path = self._get_local_path(session_id, step_id, filename)
                     # _get_local_path ensures parent dirs exist, but file itself might not
                     if os.path.exists(local_path):
-                        raw_data = self._read_from_local(local_path)
+                        raw_data = await self._read_from_local(local_path)
                     else:
                         logger.debug(f"Local file {local_path} for component {component_type} does not exist. Skipping.")
                         continue # Skip to next component if file doesn't exist
@@ -492,102 +481,106 @@ class StorageManager:
         logger.info(f"Retrieved data for session {session_id}, step {step_id}.")
         return html_content_str, screenshot_bytes_val, action_data_dict, metadata_dict_val
 
-    async def list_sessions(self) -> List[str]:
-        """Lists available unique session IDs from the storage backend.
-
-        For S3, this lists common prefixes (directories) at the root of the bucket.
-        For local storage, this lists directories directly under the `local_base_path`.
-
-        Returns:
-            A sorted list of session ID strings. Returns an empty list if no
-            sessions are found or if the storage path is inaccessible.
-
-        Raises:
-            S3OperationError: If listing S3 sessions fails due to a client error.
-            LocalStorageError: If listing local sessions fails due to an OSError.
-            S3ConfigError: If S3 is used but client cannot be initialized.
+    async def list_sessions(self, path_prefix: Optional[str] = None) -> List[str]:
         """
-        session_ids = set()
-        if self.use_s3:
-            s3_client = self._get_s3_client()
-            paginator = s3_client.get_paginator('list_objects_v2')
-            try:
-                for page in paginator.paginate(Bucket=self.s3_bucket_name, Delimiter='/'):
-                    for prefix_info in page.get('CommonPrefixes', []):
-                        # CommonPrefixes gives paths like 'session_id/', so strip the trailing '/'
-                        session_id = prefix_info.get('Prefix', '').rstrip('/')
-                        if session_id: # Ensure it's not an empty string
-                            session_ids.add(session_id)
-                logger.debug(f"Found S3 sessions: {list(session_ids)}")
-            except ClientError as e:
-                logger.error(f"Error listing S3 sessions: {e}", exc_info=True)
-                raise S3OperationError("Failed to list S3 sessions", operation="list_sessions", original_exception=e) from e
-        else:
-            if not os.path.exists(self.local_base_path) or not os.path.isdir(self.local_base_path):
-                logger.warning(f"Local base path {self.local_base_path} does not exist or is not a directory. Returning empty session list.")
-                return []
-            try:
-                for item in os.listdir(self.local_base_path):
-                    if os.path.isdir(os.path.join(self.local_base_path, item)):
-                        session_ids.add(item)
-                logger.debug(f"Found local sessions: {list(session_ids)}")
-            except OSError as e:
-                logger.error(f"Error listing local sessions from {self.local_base_path}: {e}", exc_info=True)
-                raise LocalStorageError(f"Failed to list local sessions: {e}") from e
-        
-        return sorted(list(session_ids)) # Return sorted list for consistent order
-
-    async def list_steps_for_session(self, session_id: str) -> List[str]:
-        """Lists available unique step IDs for a given session_id.
-
-        For S3, this lists common prefixes (directories) under `session_id/`.
-        For local storage, this lists directories directly under `<local_base_path>/<session_id>/`.
-
-        Args:
-            session_id: The ID of the session for which to list steps.
-
-        Returns:
-            A sorted list of step ID strings. Returns an empty list if no
-            steps are found, the session does not exist, or the path is inaccessible.
-
-        Raises:
-            S3OperationError: If listing S3 steps fails due to a client error.
-            LocalStorageError: If listing local steps fails due to an OSError.
-            S3ConfigError: If S3 is used but client cannot be initialized.
+        Lists all unique session IDs available in the storage.
+        If S3 is used, lists top-level "directories" (common prefixes) in the S3 bucket.
+        If local storage is used, lists directories in the local_base_path.
+        An optional path_prefix can be provided to list sessions under a specific S3 prefix or local sub-directory.
         """
-        step_ids = set()
         if self.use_s3:
-            s3_client = self._get_s3_client()
-            paginator = s3_client.get_paginator('list_objects_v2')
-            prefix = f"{session_id}/" # Ensure trailing slash for S3 prefix
-            try:
-                for page in paginator.paginate(Bucket=self.s3_bucket_name, Prefix=prefix, Delimiter='/'):
-                    for prefix_info in page.get('CommonPrefixes', []):
-                        # Prefix will be like 'session_id/step_id/'. We need to extract 'step_id'
-                        full_step_prefix = prefix_info.get('Prefix', '')
-                        if full_step_prefix.startswith(prefix):
-                            step_id = full_step_prefix[len(prefix):].rstrip('/')
-                            if step_id: # Ensure it's not an empty string
-                                step_ids.add(step_id)
-                logger.debug(f"Found S3 steps for session {session_id}: {list(step_ids)}")
-            except ClientError as e:
-                logger.error(f"Error listing S3 steps for session {session_id}: {e}", exc_info=True)
-                raise S3OperationError(f"Failed to list S3 steps for session {session_id}", operation="list_steps", original_exception=e) from e
+            return await self._list_sessions_s3(s3_base_prefix=path_prefix)
         else:
-            session_path = os.path.join(self.local_base_path, session_id)
-            if not os.path.exists(session_path) or not os.path.isdir(session_path):
-                logger.warning(f"Local session path {session_path} does not exist or is not a directory. Returning empty step list.")
-                return []
-            try:
-                for item in os.listdir(session_path):
-                    if os.path.isdir(os.path.join(session_path, item)):
-                        step_ids.add(item)
-                logger.debug(f"Found local steps for session {session_id}: {list(step_ids)}")
-            except OSError as e:
-                logger.error(f"Error listing local steps from {session_path}: {e}", exc_info=True)
-                raise LocalStorageError(f"Failed to list local steps for session {session_id}: {e}") from e
-        
-        return sorted(list(step_ids)) # Return sorted list for consistent order
+            return await self._list_sessions_local(local_subdir=path_prefix)
+
+    async def _list_sessions_s3(self, s3_base_prefix: Optional[str] = None) -> List[str]:
+        s3_client = self._get_s3_client()
+        sessions = set()
+        paginator = s3_client.get_paginator('list_objects_v2')
+        prefix_to_list = s3_base_prefix.strip("/") + "/" if s3_base_prefix else ""
+        logger.debug(f"Listing S3 sessions under prefix: '{prefix_to_list}' in bucket '{self.s3_bucket_name}'")
+        try:
+            for page in paginator.paginate(Bucket=self.s3_bucket_name, Prefix=prefix_to_list, Delimiter='/'):
+                if page.get('CommonPrefixes'):
+                    for common_prefix in page.get('CommonPrefixes'):
+                        # CommonPrefix is like 'prefix/session_id/', extract session_id
+                        full_path = common_prefix.get('Prefix')
+                        # Remove base prefix part and trailing slash to get session_id
+                        relative_path = full_path[len(prefix_to_list):].strip('/')
+                        if relative_path: # Ensure it's not empty
+                            sessions.add(relative_path)
+            logger.info(f"Found {len(sessions)} sessions in S3 under prefix '{prefix_to_list}': {sessions}")
+        except ClientError as e:
+            logger.error(f"Failed to list S3 sessions under prefix '{prefix_to_list}': {e}", exc_info=True)
+            raise S3OperationError(f"Failed to list S3 sessions: {e}") from e
+        return sorted(list(sessions))
+
+    async def _list_sessions_local(self, local_subdir: Optional[str] = None) -> List[str]:
+        base_dir_to_list = os.path.join(self.local_base_path, local_subdir) if local_subdir else self.local_base_path
+        logger.debug(f"Listing local sessions in directory: {base_dir_to_list}")
+        if not os.path.exists(base_dir_to_list) or not os.path.isdir(base_dir_to_list):
+            logger.warning(f"Local session path {base_dir_to_list} does not exist or is not a directory. Returning no sessions.")
+            return []
+        try:
+            sessions = [d for d in os.listdir(base_dir_to_list) if os.path.isdir(os.path.join(base_dir_to_list, d))]
+            logger.info(f"Found {len(sessions)} local sessions in {base_dir_to_list}: {sessions}")
+            return sorted(sessions)
+        except OSError as e:
+            logger.error(f"Failed to list local sessions in {base_dir_to_list}: {e}", exc_info=True)
+            raise LocalStorageError(f"Failed to list local sessions: {e}") from e
+
+    async def list_steps_for_session(self, session_id: str, path_prefix: Optional[str] = None) -> List[str]:
+        """
+        Lists all unique step IDs for a given session_id.
+        If S3, lists "sub-directories" under session_id prefix.
+        If local, lists directories under <local_base_path>/<session_id>.
+        An optional path_prefix can be provided for S3 or local sub-directory structures.
+        """
+        if not session_id:
+            logger.warning("session_id cannot be empty when listing steps.")
+            return []
+            
+        if self.use_s3:
+            return await self._list_steps_s3(session_id, s3_base_prefix=path_prefix)
+        else:
+            return await self._list_steps_local(session_id, local_subdir=path_prefix)
+
+    async def _list_steps_s3(self, session_id: str, s3_base_prefix: Optional[str] = None) -> List[str]:
+        s3_client = self._get_s3_client()
+        steps = set()
+        paginator = s3_client.get_paginator('list_objects_v2')
+        # Prefix for listing steps under a session: base_prefix/session_id/
+        session_s3_prefix = f"{s3_base_prefix.strip('/')}/{session_id}/" if s3_base_prefix else f"{session_id}/"
+        logger.debug(f"Listing S3 steps under prefix: '{session_s3_prefix}' in bucket '{self.s3_bucket_name}'")
+
+        try:
+            for page in paginator.paginate(Bucket=self.s3_bucket_name, Prefix=session_s3_prefix, Delimiter='/'):
+                if page.get('CommonPrefixes'):
+                    for common_prefix in page.get('CommonPrefixes'):
+                        full_path = common_prefix.get('Prefix')
+                        # Remove session_s3_prefix part and trailing slash for step_id
+                        relative_path = full_path[len(session_s3_prefix):].strip('/') 
+                        if relative_path:
+                            steps.add(relative_path)
+            logger.info(f"Found {len(steps)} S3 steps for session '{session_id}' under prefix '{session_s3_prefix}': {steps}")
+        except ClientError as e:
+            logger.error(f"Failed to list S3 steps for session {session_id} under prefix '{session_s3_prefix}': {e}", exc_info=True)
+            raise S3OperationError(f"Failed to list S3 steps for session {session_id}: {e}") from e
+        return sorted(list(steps))
+
+    async def _list_steps_local(self, session_id: str, local_subdir: Optional[str] = None) -> List[str]:
+        session_local_path = os.path.join(self.local_base_path, local_subdir, session_id) if local_subdir else os.path.join(self.local_base_path, session_id)
+        logger.debug(f"Listing local steps in directory: {session_local_path}")
+        if not os.path.exists(session_local_path) or not os.path.isdir(session_local_path):
+            logger.warning(f"Local step path {session_local_path} for session {session_id} does not exist or is not a directory. Returning no steps.")
+            return []
+        try:
+            steps = [d for d in os.listdir(session_local_path) if os.path.isdir(os.path.join(session_local_path, d))]
+            logger.info(f"Found {len(steps)} local steps in {session_local_path} for session {session_id}: {steps}")
+            return sorted(steps)
+        except OSError as e:
+            logger.error(f"Failed to list local steps in {session_local_path} for session {session_id}: {e}", exc_info=True)
+            raise LocalStorageError(f"Failed to list local steps for session {session_id}: {e}") from e
 
     async def delete_step(self, session_id: str, step_id: str) -> None:
         """Deletes all data associated with a specific step within a session.

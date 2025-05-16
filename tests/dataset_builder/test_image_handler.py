@@ -13,11 +13,16 @@ import numpy as np
 import random # Added for augmentation tests that mock random.uniform
 import io
 from pathlib import Path
+import logging
+from urllib.parse import urlparse
 
 from src.dataset_builder.image_handler import ImageHandler, ImageProcessingError, DEFAULT_IMAGE_FORMAT, SUPPORTED_FORMATS
 from src.dataset_builder.types import ProcessedDataRecord, ActionDetail
 # Assuming ImageHandlingError might be used in future or for other S3-related specific errors
 # from src.dataset_builder.exceptions import ImageHandlingError
+
+logging.basicConfig(level=logging.INFO) # Use INFO for less verbose test output by default
+logger = logging.getLogger(__name__)
 
 # Helper to create dummy records for get_image_reference tests
 def create_image_test_record(
@@ -42,6 +47,70 @@ def temp_test_dir():
     shutil.rmtree(dir_path)
 
 @pytest.fixture
+def sample_image_path():
+    temp_dir = tempfile.mkdtemp(prefix="pytest_image_handler_")
+    image_filename = os.path.join(temp_dir, "_temp_sample_image.png")
+    try:
+        img = Image.new('RGB', (640, 480), color='blue')
+        img.save(image_filename, format="PNG")
+        yield image_filename
+    finally:
+        if os.path.exists(image_filename):
+            os.remove(image_filename)
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+
+@pytest.fixture
+def invalid_image_path():
+    temp_dir = tempfile.mkdtemp(prefix="pytest_image_handler_invalid_")
+    invalid_filename = os.path.join(temp_dir, "_temp_invalid_image.jpg")
+    with open(invalid_filename, "w") as f:
+        f.write("This is not an image.")
+    yield invalid_filename
+    if os.path.exists(invalid_filename):
+        os.remove(invalid_filename)
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+
+@pytest.fixture
+def image_handler_fixture():
+    return ImageHandler(
+        output_format="WEBP",
+        default_resize_dimensions=(100, 100),
+        default_quality=90
+    )
+
+@pytest.fixture
+def image_handler_s3_fixture():
+    return ImageHandler(
+        output_format="WEBP",
+        default_resize_dimensions=(100, 100),
+        default_quality=90,
+        s3_bucket_name="test-bucket"
+    )
+
+@pytest.fixture(scope="function")
+def aws_credentials():
+    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+    os.environ["AWS_SECURITY_TOKEN"] = "testing"
+    os.environ["AWS_SESSION_TOKEN"] = "testing"
+    os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+    yield
+    # Clean up env vars if necessary, though moto should handle its context
+    del os.environ["AWS_ACCESS_KEY_ID"]
+    del os.environ["AWS_SECRET_ACCESS_KEY"]
+    del os.environ["AWS_SECURITY_TOKEN"]
+    del os.environ["AWS_SESSION_TOKEN"]
+    del os.environ["AWS_DEFAULT_REGION"]
+
+@pytest.fixture(scope="function")
+def s3_mock(aws_credentials):
+    with mock_aws():
+        s3 = boto3.client("s3", region_name="us-east-1")
+        yield s3
+
+@pytest.fixture
 def sample_image_rgb(temp_test_dir) -> str:
     img_path = os.path.join(temp_test_dir, "sample_rgb.png")
     img = Image.new('RGB', (60, 30), color = 'red')
@@ -62,13 +131,6 @@ def sample_image_palette(temp_test_dir) -> str:
     palette_img = rgb_img.convert("P", palette=Image.Palette.ADAPTIVE, colors=16)
     palette_img.save(img_path, format='GIF')
     return img_path
-
-@pytest.fixture
-def invalid_image_file(temp_test_dir) -> str:
-    file_path = os.path.join(temp_test_dir, "not_an_image.jpg")
-    with open(file_path, "w") as f:
-        f.write("This is definitely not an image.")
-    return file_path
 
 @pytest.fixture
 def image_handler_default() -> ImageHandler:
@@ -133,9 +195,9 @@ class TestImageHandlerLocalProcessing: # Renamed for clarity
         assert handler.s3_bucket_name == "custom-bucket"
 
     # Load Image Tests
-    def test_load_image_success_rgb(self, image_handler_default: ImageHandler, sample_image_rgb: str):
-        img = image_handler_default.load_image(sample_image_rgb)
-        assert img is not None; assert img.format == "PNG"; assert img.mode == "RGB"; assert img.size == (60, 30)
+    def test_load_image_success_rgb(self, image_handler_default: ImageHandler, sample_image_path: str):
+        img = image_handler_default.load_image(sample_image_path)
+        assert img is not None; assert img.format == "PNG"; assert img.mode == "RGB"; assert img.size == (640, 480)
 
     def test_load_image_success_rgba(self, image_handler_default: ImageHandler, sample_image_rgba: str):
         img = image_handler_default.load_image(sample_image_rgba)
@@ -152,29 +214,29 @@ class TestImageHandlerLocalProcessing: # Renamed for clarity
     def test_load_image_file_not_found(self, image_handler_default: ImageHandler):
         with pytest.raises(FileNotFoundError): image_handler_default.load_image("non_existent_file.jpg")
 
-    def test_load_image_invalid_image(self, image_handler_default: ImageHandler, invalid_image_file: str):
-        with pytest.raises(ImageProcessingError, match="Cannot identify image file"): image_handler_default.load_image(invalid_image_file)
+    def test_load_image_invalid_image(self, image_handler_default: ImageHandler, invalid_image_path: str):
+        with pytest.raises(ImageProcessingError, match="Cannot identify image file"): image_handler_default.load_image(invalid_image_path)
 
     # Resize Image Tests (copied from previous state, ensure they are correct)
-    def test_resize_image_specific_dimensions(self, image_handler_default: ImageHandler, sample_image_rgb: str):
-        img = image_handler_default.load_image(sample_image_rgb)
+    def test_resize_image_specific_dimensions(self, image_handler_default: ImageHandler, sample_image_path: str):
+        img = image_handler_default.load_image(sample_image_path)
         resized_img = image_handler_default.resize_image(img, dimensions=(30, 15))
         assert resized_img.size == (30, 15)
 
-    def test_resize_image_default_dimensions(self, sample_image_rgb: str): # Added sample_image_rgb dependency
+    def test_resize_image_default_dimensions(self, sample_image_path: str): # Added sample_image_path dependency
         handler = ImageHandler(default_resize_dimensions=(20,10))
-        pil_img = handler.load_image(sample_image_rgb) # Load the image first
+        pil_img = handler.load_image(sample_image_path) # Load the image first
         resized_img = handler.resize_image(pil_img)
         assert resized_img.size == (20, 10)
 
-    def test_resize_image_no_dimensions(self, image_handler_default: ImageHandler, sample_image_rgb: str):
-        img = image_handler_default.load_image(sample_image_rgb)
+    def test_resize_image_no_dimensions(self, image_handler_default: ImageHandler, sample_image_path: str):
+        img = image_handler_default.load_image(sample_image_path)
         resized_img = image_handler_default.resize_image(img)
         assert resized_img.size == img.size
 
     @pytest.mark.parametrize("invalid_dims", [(30, -15), (0, 15), (30,), "30x15"])
-    def test_resize_image_invalid_dimensions(self, image_handler_default: ImageHandler, sample_image_rgb: str, invalid_dims):
-        img = image_handler_default.load_image(sample_image_rgb)
+    def test_resize_image_invalid_dimensions(self, image_handler_default: ImageHandler, sample_image_path: str, invalid_dims):
+        img = image_handler_default.load_image(sample_image_path)
         with pytest.raises(ImageProcessingError, match="Invalid target_dimensions for resize"):
             image_handler_default.resize_image(img, dimensions=invalid_dims)
     
@@ -197,8 +259,8 @@ class TestImageHandlerLocalProcessing: # Renamed for clarity
 
 
     @pytest.mark.parametrize("quality_val, is_low_quality", [(10, True), (95, False)])
-    def test_save_image_quality_jpeg(self, image_handler_default: ImageHandler, sample_image_rgb: str, temp_test_dir: str, quality_val: int, is_low_quality: bool):
-        img = image_handler_default.load_image(sample_image_rgb)
+    def test_save_image_quality_jpeg(self, image_handler_default: ImageHandler, sample_image_path: str, temp_test_dir: str, quality_val: int, is_low_quality: bool):
+        img = image_handler_default.load_image(sample_image_path)
         save_path = os.path.join(temp_test_dir, f"quality_test_{quality_val}.jpeg")
         image_handler_default.save_image(img, save_path, output_format="JPEG", quality=quality_val)
         assert os.path.exists(save_path)
@@ -219,13 +281,13 @@ class TestImageHandlerLocalProcessing: # Renamed for clarity
             assert self.webp_size_q10 < self.webp_size_q95
 
 
-    def test_save_image_empty_output_path(self, image_handler_default: ImageHandler, sample_image_rgb: str):
-        img = image_handler_default.load_image(sample_image_rgb)
+    def test_save_image_empty_output_path(self, image_handler_default: ImageHandler, sample_image_path: str):
+        img = image_handler_default.load_image(sample_image_path)
         with pytest.raises(ImageProcessingError, match="Output path for saving image cannot be empty"):
             image_handler_default.save_image(img, "")
 
-    def test_save_image_create_directory(self, image_handler_default: ImageHandler, sample_image_rgb: str, temp_test_dir: str):
-        img = image_handler_default.load_image(sample_image_rgb)
+    def test_save_image_create_directory(self, image_handler_default: ImageHandler, sample_image_path: str, temp_test_dir: str):
+        img = image_handler_default.load_image(sample_image_path)
         nested_dir = os.path.join(temp_test_dir, "nested", "deeply")
         save_path = os.path.join(nested_dir, "img_in_nested.png")
         assert not os.path.exists(nested_dir)
@@ -233,17 +295,17 @@ class TestImageHandlerLocalProcessing: # Renamed for clarity
         assert os.path.exists(save_path)
 
     # Process Image File Tests
-    def test_process_image_file_pipeline(self, image_handler_default: ImageHandler, sample_image_rgb: str, temp_test_dir: str):
+    def test_process_image_file_pipeline(self, image_handler_default: ImageHandler, sample_image_path: str, temp_test_dir: str):
         output_filename = "processed_pipeline.webp"; output_path = os.path.join(temp_test_dir, output_filename)
         resize_dims = (20, 10)
-        returned_path = image_handler_default.process_image_file(sample_image_rgb, output_path, resize_dimensions=resize_dims, output_format="WEBP", quality=70)
+        returned_path = image_handler_default.process_image_file(sample_image_path, output_path, resize_dimensions=resize_dims, output_format="WEBP", quality=70)
         assert os.path.exists(output_path); assert returned_path == os.path.abspath(output_path)
         processed_img = Image.open(output_path)
         assert processed_img.format == "WEBP"; assert processed_img.size == resize_dims
 
     # Normalization Tests
-    def test_normalize_image_rgb(self, image_handler_default: ImageHandler, sample_image_rgb: str):
-        img_pil_input = image_handler_default.load_image(sample_image_rgb)
+    def test_normalize_image_rgb(self, image_handler_default: ImageHandler, sample_image_path: str):
+        img_pil_input = image_handler_default.load_image(sample_image_path)
         normalized_pil_output = image_handler_default.normalize_image(img_pil_input)
         
         assert isinstance(normalized_pil_output, Image.Image)
@@ -324,15 +386,15 @@ class TestImageHandlerLocalProcessing: # Renamed for clarity
         assert np.allclose(result_array, expected_uint8_array, atol=1) # Check it's scaled back up to 0-255
 
     # Augmentation Tests
-    def test_augment_image_output_properties(self, image_handler_default: ImageHandler, sample_image_rgb: str):
-        img_pil = image_handler_default.load_image(sample_image_rgb)
+    def test_augment_image_output_properties(self, image_handler_default: ImageHandler, sample_image_path: str):
+        img_pil = image_handler_default.load_image(sample_image_path)
         augmented_img = image_handler_default.augment_image(img_pil)
         assert isinstance(augmented_img, Image.Image)
         assert augmented_img.mode == img_pil.mode
         assert augmented_img.size == img_pil.size # Assuming rotation expand=False
 
-    def test_augment_image_content_can_change(self, image_handler_default: ImageHandler, sample_image_rgb: str):
-        img_pil = image_handler_default.load_image(sample_image_rgb)
+    def test_augment_image_content_can_change(self, image_handler_default: ImageHandler, sample_image_path: str):
+        img_pil = image_handler_default.load_image(sample_image_path)
         # Run augmentation multiple times; high probability of change
         changed = False
         original_bytes = img_pil.tobytes()
@@ -670,25 +732,162 @@ class TestImageHandlerS3:
             # This is complex because its name depends on the internal temp dir.
             # For this test structure, rely on process_image_s3's finally block for such internal temp files.
 
-# --- S3 Test Fixtures ---
-@pytest.fixture(scope='function')
-def aws_credentials():
-    """Mocked AWS Credentials for moto."""
-    os.environ['AWS_ACCESS_KEY_ID'] = 'testing'
-    os.environ['AWS_SECRET_ACCESS_KEY'] = 'testing'
-    os.environ['AWS_SECURITY_TOKEN'] = 'testing'
-    os.environ['AWS_SESSION_TOKEN'] = 'testing'
-    os.environ['AWS_DEFAULT_REGION'] = 'us-east-1' # Example region
+    def test_direct_upload_image_to_s3(self, image_handler_with_s3: ImageHandler, s3_client_fixture, sample_image_s3_upload_source: str):
+        """Test direct S3 upload functionality."""
+        bucket_name = image_handler_with_s3.s3_bucket_name
+        assert bucket_name is not None, "S3 bucket name not configured in image_handler_with_s3 fixture"
+        s3_key = "test_direct_uploads/direct_uploaded_image.png"
 
-@pytest.fixture(scope='function')
-def s3_client(aws_credentials):
-    """Yield a mocked S3 client that works with moto."""
-    with mock_aws():
-        yield boto3.client('s3', region_name='us-east-1')
+        uploaded_s3_url = image_handler_with_s3.upload_image_to_s3(
+            sample_image_s3_upload_source,
+            s3_key
+            # Uses bucket_name from handler
+        )
+        assert uploaded_s3_url == f"s3://{bucket_name}/{s3_key}"
 
-@pytest.fixture(scope='function')
-def s3_bucket(s3_client):
-    """Create a mock S3 bucket and yield its name."""
-    bucket_name = "test-image-bucket"
-    s3_client.create_bucket(Bucket=bucket_name)
-    return bucket_name
+        # Verify file exists in S3
+        response = s3_client_fixture.get_object(Bucket=bucket_name, Key=s3_key)
+        assert response['ResponseMetadata']['HTTPStatusCode'] == 200
+        assert int(response['ContentLength']) > 0
+        # Clean up the uploaded object if necessary, though mock_s3 handles this generally
+        # s3_client_fixture.delete_object(Bucket=bucket_name, Key=s3_key)
+
+    def test_direct_download_image_from_s3_various_conditions(self, image_handler_with_s3: ImageHandler, s3_client_fixture, temp_test_dir: str, sample_image_s3_upload_source: str):
+        """Test direct S3 download, including not found and invalid URL cases."""
+        bucket_name = image_handler_with_s3.s3_bucket_name
+        assert bucket_name is not None
+        s3_key = "test_direct_downloads/sample_to_download.png"
+        s3_url = f"s3://{bucket_name}/{s3_key}"
+
+        # Upload a file to download
+        _put_dummy_s3_object(s3_client_fixture, bucket_name, s3_key, content=Path(sample_image_s3_upload_source).read_bytes())
+
+        # Test successful download
+        download_target_dir = os.path.join(temp_test_dir, "s3_direct_downloads")
+        os.makedirs(download_target_dir, exist_ok=True)
+        
+        local_download_path = image_handler_with_s3.download_image_from_s3(s3_url, local_temp_dir=download_target_dir)
+        assert os.path.exists(local_download_path)
+        assert os.path.isfile(local_download_path)
+        try:
+            Image.open(local_download_path)
+        except UnidentifiedImageError:
+            pytest.fail(f"Downloaded S3 file {local_download_path} is not a valid image.")
+        finally:
+            if os.path.exists(local_download_path):
+                os.remove(local_download_path) # Clean up the specific downloaded file
+
+        # Test download: S3 object not found
+        s3_url_non_existent = f"s3://{bucket_name}/non_existent_folder/non_existent_image.png"
+        with pytest.raises(ImageProcessingError, match="S3 object not found"):
+            image_handler_with_s3.download_image_from_s3(s3_url_non_existent, local_temp_dir=download_target_dir)
+
+        # Test download: Invalid S3 URL scheme
+        with pytest.raises(ImageProcessingError, match="Invalid S3 URL scheme"):
+            image_handler_with_s3.download_image_from_s3("http://not-s3/image.png", local_temp_dir=download_target_dir)
+        
+        # Clean up the dummy S3 object and local dir
+        # s3_client_fixture.delete_object(Bucket=bucket_name, Key=s3_key) # Moto handles cleanup
+        # shutil.rmtree(download_target_dir) # temp_test_dir fixture handles its subdirs IF they are created by tests directly under it.
+                                         # This one is created inside a test, so better to clean up.
+        if os.path.exists(download_target_dir):
+             shutil.rmtree(download_target_dir)
+
+    def test_full_process_image_s3_integration(self, image_handler_with_s3: ImageHandler, s3_client_fixture, temp_test_dir: str, sample_image_s3_upload_source: str):
+        """Test the full S3 processing pipeline: download, process, upload."""
+        input_bucket_name = "s3-input-bucket-integration"
+        # Use the bucket configured in the handler for output
+        output_bucket_name = image_handler_with_s3.s3_bucket_name 
+        assert output_bucket_name is not None
+
+        # Create buckets if they don't exist (moto needs this for the first interaction)
+        try:
+            s3_client_fixture.create_bucket(Bucket=input_bucket_name)
+        except ClientError as e:
+            if e.response['Error']['Code'] != 'BucketAlreadyOwnedByYou': raise
+        # Output bucket is implicitly created by mock_s3_environment_for_class or should be
+
+        input_s3_key = "raw_images_integration/sample_for_processing.png"
+        input_s3_url = f"s3://{input_bucket_name}/{input_s3_key}"
+        
+        _put_dummy_s3_object(s3_client_fixture, input_bucket_name, input_s3_key, content=Path(sample_image_s3_upload_source).read_bytes())
+
+        output_s3_key_prefix = "processed_integration/"
+        # Let the handler derive the output filename based on its output_format ("WEBP")
+        # The actual output filename will be like "sample_for_processing.webp"
+        original_input_filename_stem = Path(input_s3_key).stem # "sample_for_processing"
+
+        processed_s3_url = image_handler_with_s3.process_image_s3(
+            input_s3_url=input_s3_url,
+            output_s3_key_prefix=output_s3_key_prefix,
+            # output_filename=None, # Let it be derived
+            target_s3_bucket_name=output_bucket_name, 
+            resize_dimensions=(70, 55), # Specific resize for this test
+            output_format="JPEG" # Override handler default for this test
+        )
+        
+        expected_output_filename = f"{original_input_filename_stem}.jpeg" # Based on overridden format
+        expected_output_s3_key = f"{output_s3_key_prefix}{expected_output_filename}"
+        assert processed_s3_url == f"s3://{output_bucket_name}/{expected_output_s3_key}"
+
+        # Verify the processed file exists in S3 and has expected properties
+        verify_temp_dir = os.path.join(temp_test_dir, "s3_verify_integration")
+        os.makedirs(verify_temp_dir, exist_ok=True)
+        try:
+            downloaded_processed_path = os.path.join(verify_temp_dir, expected_output_filename)
+            s3_client_fixture.download_file(output_bucket_name, expected_output_s3_key, downloaded_processed_path)
+            
+            processed_img = Image.open(downloaded_processed_path)
+            assert processed_img.size == (70, 55)
+            assert processed_img.format == "JPEG"
+        finally:
+            if os.path.exists(verify_temp_dir):
+                 shutil.rmtree(verify_temp_dir)
+        # s3_client_fixture.delete_object(Bucket=input_bucket_name, Key=input_s3_key) # Moto cleanup
+        # s3_client_fixture.delete_object(Bucket=output_bucket_name, Key=expected_output_s3_key) # Moto cleanup
+
+    def test_temporary_file_cleanup_in_process_image_s3(self, image_handler_with_s3: ImageHandler, s3_client_fixture, sample_image_s3_upload_source: str):
+        """Tests that temporary files created during process_image_s3 are cleaned up."""
+        input_bucket_name = "s3-input-cleanup-test"
+        output_bucket_name = image_handler_with_s3.s3_bucket_name
+        assert output_bucket_name is not None
+
+        s3_client_fixture.create_bucket(Bucket=input_bucket_name)
+
+        input_s3_key = "raw_cleanup/image.png"
+        input_s3_url = f"s3://{input_bucket_name}/{input_s3_key}"
+        _put_dummy_s3_object(s3_client_fixture, input_bucket_name, input_s3_key, content=Path(sample_image_s3_upload_source).read_bytes())
+
+        output_s3_key_prefix = "processed_cleanup/"
+
+        # Patch tempfile.mkdtemp to monitor created temporary directories
+        created_temp_dirs = []
+        original_mkdtemp = tempfile.mkdtemp
+        def HackedMkdtemp(*args, **kwargs):
+            path = original_mkdtemp(*args, **kwargs)
+            created_temp_dirs.append(path)
+            return path
+
+        with patch('tempfile.mkdtemp', HackedMkdtemp):
+            try:
+                image_handler_with_s3.process_image_s3(
+                    input_s3_url=input_s3_url,
+                    output_s3_key_prefix=output_s3_key_prefix,
+                    target_s3_bucket_name=output_bucket_name
+                )
+            except Exception as e:
+                # Clean up created temp dirs even if test fails mid-way
+                for temp_dir_path in created_temp_dirs:
+                    if os.path.exists(temp_dir_path):
+                        shutil.rmtree(temp_dir_path)
+                pytest.fail(f"process_image_s3 raised an exception during cleanup test: {e}")
+        
+        assert len(created_temp_dirs) > 0, "mkdtemp was not called, test setup issue or no processing occurred that needed a temp dir."
+        for temp_dir_path in created_temp_dirs:
+            assert not os.path.exists(temp_dir_path), f"Temporary directory {temp_dir_path} was not cleaned up by process_image_s3."
+
+    # Further S3 tests can include:
+    # - Uploading with specific content types
+    # - Handling S3 client errors during init or operations (if not covered by generic _get_s3_client tests)
+    # - Processing images with different output formats to S3
+    # - Testing s3_bucket_name fallback (handler vs. direct param)

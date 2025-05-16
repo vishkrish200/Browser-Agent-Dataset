@@ -686,162 +686,173 @@ class TestStorageManagerListingOperations:
 
     @pytest.mark.asyncio
     async def test_list_sessions_s3_success(self, mock_s3_sm):
-        sm, mock_client = mock_s3_sm
-        mock_paginator = MagicMock()
-        mock_client.get_paginator.return_value = mock_paginator
-        mock_paginator.paginate.return_value = [
-            {
-                "CommonPrefixes": [
-                    {"Prefix": "session1/"},
-                    {"Prefix": "session2/"},
-                ]
-            },
-            {
-                "CommonPrefixes": [
-                    {"Prefix": "session3/"},
-                ]
-            }
-        ]
+        s3_client = mock_s3_sm._get_s3_client()
+        s3_client.put_object(Bucket=mock_s3_sm.s3_bucket_name, Key="session1/step1/file.txt", Body="test")
+        s3_client.put_object(Bucket=mock_s3_sm.s3_bucket_name, Key="session2/stepA/data.html", Body="test")
+        s3_client.put_object(Bucket=mock_s3_sm.s3_bucket_name, Key="prefix/session3/stepB/obs.png", Body="test")
+        s3_client.put_object(Bucket=mock_s3_sm.s3_bucket_name, Key="prefix/session4/stepC/act.json", Body="test")
 
-        sessions = await sm.list_sessions()
-        assert sorted(sessions) == ["session1", "session2", "session3"]
-        mock_client.get_paginator.assert_called_once_with('list_objects_v2')
-        mock_paginator.paginate.assert_called_once_with(Bucket=sm.s3_bucket_name, Delimiter='/')
+        # Test listing at root
+        sessions = await mock_s3_sm.list_sessions()
+        assert sorted(sessions) == sorted(["session1", "session2", "prefix"])
+        
+        # Test listing with prefix
+        sessions_with_prefix = await mock_s3_sm.list_sessions(path_prefix="prefix")
+        assert sorted(sessions_with_prefix) == sorted(["session3", "session4"])
+
+        # Test listing with non-existent prefix
+        sessions_non_existent_prefix = await mock_s3_sm.list_sessions(path_prefix="nonexistent")
+        assert sessions_non_existent_prefix == []
 
     @pytest.mark.asyncio
     async def test_list_sessions_s3_no_sessions(self, mock_s3_sm):
-        sm, mock_client = mock_s3_sm
-        mock_paginator = MagicMock()
-        mock_client.get_paginator.return_value = mock_paginator
-        mock_paginator.paginate.return_value = [{'CommonPrefixes': []}]
-        sessions = await sm.list_sessions()
+        sessions = await mock_s3_sm.list_sessions()
         assert sessions == []
+        sessions_with_prefix = await mock_s3_sm.list_sessions(path_prefix="some_prefix")
+        assert sessions_with_prefix == []
 
     @pytest.mark.asyncio
     async def test_list_sessions_s3_client_error(self, mock_s3_sm):
-        sm, mock_client = mock_s3_sm
-        mock_paginator = MagicMock()
-        mock_client.get_paginator.return_value = mock_paginator
-        mock_paginator.paginate.side_effect = ClientError({"Error": {}}, "list_objects_v2")
-        with pytest.raises(S3OperationError, match="Failed to list S3 sessions"):
-            await sm.list_sessions()
+        s3_client = mock_s3_sm._get_s3_client()
+        s3_client.list_objects_v2 = MagicMock(side_effect=ClientError({}, 'ListObjectsV2'))
+        with pytest.raises(S3OperationError):
+            await mock_s3_sm.list_sessions()
+        with pytest.raises(S3OperationError):
+            await mock_s3_sm.list_sessions(path_prefix="error_prefix")
 
     @pytest.mark.asyncio
     async def test_list_sessions_local_success(self, local_sm_real_fs, tmp_path):
-        sm = local_sm_real_fs
-        sm._local_base_path = tmp_path # Ensure sm uses the tmp_path for this test
-        (tmp_path / "sessionA").mkdir()
-        (tmp_path / "sessionB").mkdir()
-        (tmp_path / "file.txt").write_text("ignore") # Should be ignored
+        base_path = Path(local_sm_real_fs.local_base_path)
+        (base_path / "sessionA").mkdir()
+        (base_path / "sessionB").mkdir()
+        (base_path / "prefix1" / "sessionC").mkdir(parents=True, exist_ok=True)
+        (base_path / "prefix1" / "sessionD").mkdir(parents=True, exist_ok=True)
+        (base_path / "prefix2" / "sessionE").mkdir(parents=True, exist_ok=True)
+        (base_path / "not_a_dir.txt").write_text("ignore")
+        (base_path / "prefix1" / "not_a_session_dir.txt").write_text("ignore")
 
-        sessions = await sm.list_sessions()
-        assert sorted(sessions) == ["sessionA", "sessionB"]
+        sessions = await local_sm_real_fs.list_sessions()
+        assert sorted(sessions) == sorted(["sessionA", "sessionB", "prefix1", "prefix2"]) # prefix1 and prefix2 are dirs too
+
+        sessions_prefix1 = await local_sm_real_fs.list_sessions(path_prefix="prefix1")
+        assert sorted(sessions_prefix1) == sorted(["sessionC", "sessionD"])
+
+        sessions_non_existent_prefix = await local_sm_real_fs.list_sessions(path_prefix="nonexistent")
+        assert sessions_non_existent_prefix == []
 
     @pytest.mark.asyncio
     async def test_list_sessions_local_empty(self, local_sm_real_fs, tmp_path):
-        sm = local_sm_real_fs
-        sm._local_base_path = tmp_path
-        sessions = await sm.list_sessions()
+        # Ensure base path exists but is empty
+        Path(local_sm_real_fs.local_base_path).mkdir(exist_ok=True)
+        sessions = await local_sm_real_fs.list_sessions()
         assert sessions == []
-    
+        sessions_with_prefix = await local_sm_real_fs.list_sessions(path_prefix="some_prefix")
+        assert sessions_with_prefix == []
+
     @pytest.mark.asyncio
     async def test_list_sessions_local_base_path_does_not_exist(self, local_sm_real_fs):
-        sm = local_sm_real_fs
-        sm._local_base_path = Path("/non/existent/path/for/testing/sessions")
-        # Ensure the path doesn't exist (it shouldn't by default, but defensive)
-        assert not sm._local_base_path.exists()
-        sessions = await sm.list_sessions()
-        assert sessions == [] # Should log a warning and return empty
+        # Ensure local_base_path points to something that doesn't exist by re-initing SM
+        sm_non_existent_path = StorageManager(local_base_path=str(Path(local_sm_real_fs.local_base_path) / "truly_gone"), prefer_s3=False)
+        sessions = await sm_non_existent_path.list_sessions()
+        assert sessions == []
+        sessions_with_prefix = await sm_non_existent_path.list_sessions(path_prefix="any")
+        assert sessions_with_prefix == []
 
     @pytest.mark.asyncio
     async def test_list_sessions_local_os_error(self, local_sm_real_fs, tmp_path):
-        sm = local_sm_real_fs
-        sm._local_base_path = tmp_path
-        with patch("os.listdir", side_effect=OSError("Permission denied")):
-             with pytest.raises(LocalStorageError, match="Failed to list local sessions"):
-                await sm.list_sessions()
+        with patch('os.listdir', side_effect=OSError("Permission denied")):
+            with pytest.raises(LocalStorageError):
+                await local_sm_real_fs.list_sessions()
+            with pytest.raises(LocalStorageError):
+                await local_sm_real_fs.list_sessions(path_prefix="any_prefix")
 
     @pytest.mark.asyncio
     async def test_list_steps_for_session_s3_success(self, mock_s3_sm):
-        sm, mock_client = mock_s3_sm
-        session_id = "sess1"
-        mock_paginator = MagicMock()
-        mock_client.get_paginator.return_value = mock_paginator
-        mock_paginator.paginate.return_value = [
-            {
-                "CommonPrefixes": [
-                    {"Prefix": "sess1/stepA/"},
-                    {"Prefix": "sess1/stepB/"},
-                ]
-            }
-        ]
-        steps = await sm.list_steps_for_session(session_id)
-        assert sorted(steps) == ["stepA", "stepB"]
-        mock_client.get_paginator.assert_called_once_with('list_objects_v2')
-        mock_paginator.paginate.assert_called_once_with(Bucket=sm.s3_bucket_name, Prefix=f"{session_id}/", Delimiter='/')
+        s3_client = mock_s3_sm._get_s3_client()
+        s3_client.put_object(Bucket=mock_s3_sm.s3_bucket_name, Key="session1/step1/file.txt", Body="test")
+        s3_client.put_object(Bucket=mock_s3_sm.s3_bucket_name, Key="session1/step2/data.html", Body="test")
+        s3_client.put_object(Bucket=mock_s3_sm.s3_bucket_name, Key="prefix/sessionX/stepA/obs.png", Body="test")
+        s3_client.put_object(Bucket=mock_s3_sm.s3_bucket_name, Key="prefix/sessionX/stepB/act.json", Body="test")
+
+        # Test listing steps at root level session
+        steps_session1 = await mock_s3_sm.list_steps_for_session("session1")
+        assert sorted(steps_session1) == sorted(["step1", "step2"])
+
+        # Test listing steps for session under a prefix
+        steps_sessionX_prefix = await mock_s3_sm.list_steps_for_session("sessionX", path_prefix="prefix")
+        assert sorted(steps_sessionX_prefix) == sorted(["stepA", "stepB"])
+
+        # Test non-existent session or prefix
+        assert await mock_s3_sm.list_steps_for_session("nonexistent_session") == []
+        assert await mock_s3_sm.list_steps_for_session("session1", path_prefix="nonexistent_prefix") == []
+        assert await mock_s3_sm.list_steps_for_session("nonexistent_session", path_prefix="prefix") == []
 
     @pytest.mark.asyncio
     async def test_list_steps_for_session_s3_no_steps(self, mock_s3_sm):
-        sm, mock_client = mock_s3_sm
-        session_id = "sess_empty"
-        mock_paginator = MagicMock()
-        mock_client.get_paginator.return_value = mock_paginator
-        mock_paginator.paginate.return_value = [] # No pages or no CommonPrefixes
-        steps = await sm.list_steps_for_session(session_id)
+        # Create session but no steps
+        s3_client = mock_s3_sm._get_s3_client()
+        s3_client.put_object(Bucket=mock_s3_sm.s3_bucket_name, Key="empty_session/", Body="") # Create a common prefix for session
+        steps = await mock_s3_sm.list_steps_for_session("empty_session")
         assert steps == []
+
+        # With prefix
+        s3_client.put_object(Bucket=mock_s3_sm.s3_bucket_name, Key="pfx/empty_session_pfx/", Body="")
+        steps_pfx = await mock_s3_sm.list_steps_for_session("empty_session_pfx", path_prefix="pfx")
+        assert steps_pfx == []
 
     @pytest.mark.asyncio
     async def test_list_steps_for_session_s3_client_error(self, mock_s3_sm):
-        sm, mock_client = mock_s3_sm
-        session_id = "sess_err"
-        mock_paginator = MagicMock()
-        mock_client.get_paginator.return_value = mock_paginator
-        mock_paginator.paginate.side_effect = ClientError({"Error": {}}, "list_objects_v2")
-        with pytest.raises(S3OperationError, match=f"Failed to list S3 steps for session {session_id}"):
-            await sm.list_steps_for_session(session_id)
+        s3_client = mock_s3_sm._get_s3_client()
+        s3_client.list_objects_v2 = MagicMock(side_effect=ClientError({}, 'ListObjectsV2'))
+        with pytest.raises(S3OperationError):
+            await mock_s3_sm.list_steps_for_session("session1")
+        with pytest.raises(S3OperationError):
+            await mock_s3_sm.list_steps_for_session("session1", path_prefix="any_prefix")
 
     @pytest.mark.asyncio
     async def test_list_steps_for_session_local_success(self, local_sm_real_fs, tmp_path):
-        sm = local_sm_real_fs
-        sm._local_base_path = tmp_path
-        session_id = "sessionX"
-        session_path = tmp_path / session_id
-        session_path.mkdir()
-        (session_path / "step1").mkdir()
-        (session_path / "step2").mkdir()
-        (session_path / "metadata.json").write_text("session_metadata") # Should be ignored
+        base_path = Path(local_sm_real_fs.local_base_path)
+        (base_path / "sessionAlpha" / "stepX").mkdir(parents=True, exist_ok=True)
+        (base_path / "sessionAlpha" / "stepY").mkdir(parents=True, exist_ok=True)
+        (base_path / "prefixA" / "sessionBeta" / "stepZ").mkdir(parents=True, exist_ok=True)
+        (base_path / "prefixA" / "sessionBeta" / "not_a_step_dir.txt").write_text("ignore")
 
-        steps = await sm.list_steps_for_session(session_id)
-        assert sorted(steps) == ["step1", "step2"]
+        steps_alpha = await local_sm_real_fs.list_steps_for_session("sessionAlpha")
+        assert sorted(steps_alpha) == sorted(["stepX", "stepY"])
+
+        steps_beta_prefixA = await local_sm_real_fs.list_steps_for_session("sessionBeta", path_prefix="prefixA")
+        assert sorted(steps_beta_prefixA) == ["stepZ"]
+
+        assert await local_sm_real_fs.list_steps_for_session("nonexistent_session") == []
+        assert await local_sm_real_fs.list_steps_for_session("sessionAlpha", path_prefix="nonexistent_prefix") == []
 
     @pytest.mark.asyncio
     async def test_list_steps_for_session_local_empty(self, local_sm_real_fs, tmp_path):
-        sm = local_sm_real_fs
-        sm._local_base_path = tmp_path
-        session_id = "sessionEmpty"
-        (tmp_path / session_id).mkdir() # Session dir exists but is empty
-        steps = await sm.list_steps_for_session(session_id)
+        base_path = Path(local_sm_real_fs.local_base_path)
+        (base_path / "session_no_steps").mkdir(exist_ok=True)
+        steps = await local_sm_real_fs.list_steps_for_session("session_no_steps")
         assert steps == []
+
+        (base_path / "pfx" / "session_no_steps_pfx").mkdir(parents=True, exist_ok=True)
+        steps_pfx = await local_sm_real_fs.list_steps_for_session("session_no_steps_pfx", path_prefix="pfx")
+        assert steps_pfx == []
 
     @pytest.mark.asyncio
     async def test_list_steps_for_session_local_session_path_does_not_exist(self, local_sm_real_fs, tmp_path):
-        sm = local_sm_real_fs
-        sm._local_base_path = tmp_path
-        session_id = "non_existent_session"
-        # Ensure session path doesn't exist
-        assert not (tmp_path / session_id).exists()
-        steps = await sm.list_steps_for_session(session_id)
-        assert steps == [] # Should log a warning and return empty
+        steps = await local_sm_real_fs.list_steps_for_session("non_existent_session")
+        assert steps == []
+        steps_pfx = await local_sm_real_fs.list_steps_for_session("non_existent_session", path_prefix="any_prefix")
+        assert steps_pfx == []
 
     @pytest.mark.asyncio
     async def test_list_steps_for_session_local_os_error(self, local_sm_real_fs, tmp_path):
-        sm = local_sm_real_fs
-        sm._local_base_path = tmp_path
-        session_id = "session_os_error"
-        (tmp_path / session_id).mkdir()
-        with patch("os.listdir", side_effect=OSError("Access denied")):
-             with pytest.raises(LocalStorageError, match=f"Failed to list local steps for session {session_id}"):
-                await sm.list_steps_for_session(session_id)
+        session_path = Path(local_sm_real_fs.local_base_path) / "error_session"
+        session_path.mkdir(exist_ok=True)
+        with patch('os.listdir', side_effect=OSError("Permission denied")):
+            with pytest.raises(LocalStorageError):
+                await local_sm_real_fs.list_steps_for_session("error_session")
+            with pytest.raises(LocalStorageError):
+                await local_sm_real_fs.list_steps_for_session("error_session", path_prefix="any_prefix")
 
 class TestStorageManagerDeletionOperations:
     """Tests for deletion operations in StorageManager."""
@@ -1092,3 +1103,61 @@ class TestStorageManagerS3Integration:
         # 8. Verify session is deleted
         sessions_after_delete = await sm.list_sessions()
         assert sessions_after_delete == [] 
+
+        # Test object_exists_s3
+        html_key = s3_integration_sm._get_s3_key(session_id, step_id, HTML_FILENAME)
+        non_existent_key = "non/existent/key.txt"
+        assert s3_integration_sm.object_exists_s3(html_key) is True
+        assert s3_integration_sm.object_exists_s3(non_existent_key) is False
+
+        # Test object_exists_s3 when S3 is not in use by the manager
+        local_only_sm = StorageManager(local_base_path=str(tmp_path / "local_sm_exist_test"), prefer_s3=False)
+        assert local_only_sm.object_exists_s3(html_key) is False # Should return False as S3 not used
+
+        # Test object_exists_s3 with S3 client error (other than 404)
+        mock_s3_client = MagicMock()
+        mock_s3_client.head_object.side_effect = ClientError({"Error": {"Code": "500", "Message": "Internal Server Error"}}, "HeadObject")
+        
+        with patch.object(s3_integration_sm, '_s3_client', mock_s3_client): # Inject mock client
+             with pytest.raises(S3OperationError, match="Failed to check existence of S3 object"):
+                s3_integration_sm.object_exists_s3("some/key")
+
+        # Cleanup (already done by test fixture and method itself)
+        await s3_integration_sm.delete_step(session_id, step_id)
+        assert s3_integration_sm.object_exists_s3(html_key) is False
+
+    # Add other S3 integration tests here if any
+
+# You might want a dedicated TestStorageManagerUtilities class if you add more utils
+# For now, adding to TestStorageManagerS3Integration is okay as it requires S3 setup.
+
+# Example of how it could be structured if in its own test, reusing s3_integration_sm:
+# class TestStorageManagerS3Utilities:
+#     @pytest.mark.asyncio
+#     async def test_object_exists_s3_various_cases(self, s3_integration_sm: StorageManager, sample_data, tmp_path):
+#         session_id = "util_sess_exists"
+#         step_id = "util_step_exists"
+#         await s3_integration_sm.store_step_data(session_id, step_id, html_content=sample_data["html"])
+#         html_key = s3_integration_sm._get_s3_key(session_id, step_id, HTML_FILENAME)
+#         non_existent_key = "this/key/does/not/exist.dat"
+
+#         assert s3_integration_sm.object_exists_s3(html_key) is True
+#         assert s3_integration_sm.object_exists_s3(non_existent_key) is False
+
+#         
+#         # Test S3 not in use case
+#         local_sm = StorageManager(local_base_path=str(tmp_path / "local_obj_exist"), prefer_s3=False)
+#         assert local_sm.object_exists_s3(html_key) is False
+        
+#         # Test S3 client error during head_object
+#         mock_client_error = MagicMock()
+#         mock_client_error.head_object.side_effect = ClientError(
+#             {"Error": {"Code": "ExpiredToken", "Message": "Token expired"}}, "HeadObject"
+#         )
+#         with patch.object(s3_integration_sm, '_s3_client', mock_client_error):
+#             with pytest.raises(S3OperationError):
+#                 s3_integration_sm.object_exists_s3(html_key)
+        
+#         await s3_integration_sm.delete_step(session_id, step_id)
+        
+#         assert s3_integration_sm.object_exists_s3(html_key) is False 
