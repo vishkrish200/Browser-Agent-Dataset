@@ -1,7 +1,7 @@
 httpx>=0.20.0
 fastapi>=0.100.0
 uvicorn>=0.20.0
-beautifulsoup4 # For PII Scrubber HTML parsing
+beautifulsoup4==4.12.3
 # htmlmin # Causes issues with Python 3.13 due to cgi module removal
 minify-html>=0.14.0
 respx>=0.21.0,<0.23.0 # For mocking httpx in tests
@@ -9,16 +9,45 @@ pytest>=8.0.0,<9.0.0
 pytest-asyncio>=0.23.0,<0.27.0 # For testing async code with pytest
 pytest-cov>=4.0.0,<7.0.0 # For code coverage
 flake8>=6.0.0,<8.0.0 # For linting
-python-dotenv>=1.0.0 # For loading .env files
+python-dotenv==1.0.1
 tomli>=2.0.0 # For parsing pyproject.toml
 tenacity>=8.2.0,<9.0.0 # For retry logic
-Pillow>=10.0.0 # For image processing (loading, resizing, etc.)
+Pillow==10.4.0 # Trying the absolute latest version 10.4.0
 numpy>=1.20.0 # Added for image normalization
 # gzip # Removed as it's a built-in module
 typer[all]
 pydantic-settings
-boto3>=1.28.0 # For AWS S3 interaction
+boto3==1.34.48
+botocore==1.34.48
 # Add other core dependencies below
+stagehand-py>=0.1.0 # For direct browser control via CDP / Playwright integration
+openai>=1.0.0 # For direct LLM calls for AI actions
+browser-use==0.1.40
+langchain-openai
+browserbase==1.4.0
+# dotenv # Handled by python-dotenv
+fastapi==0.109.2
+# greenlet==3.0.3 # Often a dependency of other async libs, check if needed directly
+langchain
+langchain-anthropic==0.3.3
+langchain-community
+langchain-core>=0.3.35
+# markdownify==0.11.6 # If generating markdown from HTML
+# minify-html==0.15.0 # If minifying HTML
+moto==5.0.0
+# openai # Handled by langchain-openai or browser-use
+playwright>=1.49.0
+posthog>=3.7.0
+# pydantic==2.6.4 # Check version compatibility with FastAPI and Langchain
+python-dotenv==1.0.1
+# python-json-logger==2.0.7 # If using JSON formatted logs
+requests>=2.32.3
+rich==13.7.1
+# stagehand==X.Y.Z # Add if using a local stagehand package, or remove if only client
+uvicorn==0.27.1
+# tiktoken # Often a dependency of OpenAI libs
+# tqdm # For progress bars
+pyobjtojson # Added for serializing agent history
 
 # Testing
 pytest
