@@ -153,7 +153,7 @@ class PIIScrubber:
         """
         self._reset_counts()
         if not BS4_AVAILABLE:
-            msg = "BeautifulSoup4 not installed. HTML scrubbing is disabled. Install with `pip install beautifulsoup4`."
+            msg = "BeautifulSoup4 not installed. HTML scrubbing is disabled. Install with `uv add beautifulsoup4`."
             logger.error(msg, extra=DEFAULT_LOG_EXTRA_PII)
             raise PIIScrubbingError(msg) # Raise an error instead of returning original
         

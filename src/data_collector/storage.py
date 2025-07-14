@@ -172,7 +172,7 @@ class S3Storage(StorageBackend):
     def __init__(self, config: StorageConfig):
         super().__init__(config)
         if not BOTO3_AVAILABLE:
-            msg = "S3Storage requires boto3. Please install with `pip install boto3`."
+            msg = "S3Storage requires boto3. Please install with `uv add boto3`."
             logger.critical(msg)
             raise ConfigurationError(msg)
         

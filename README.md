@@ -130,12 +130,12 @@ git clone https://github.com/yourusername/browser-agent-dataset
 cd browser-agent-dataset
 
 # Create virtual environment
-python -m venv .venv
+uv venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install dependencies
-pip install -r requirements.txt
-pip install -e .
+uv pip install -r requirements.txt
+uv pip install -e .
 ```
 
 ### Configuration
@@ -163,10 +163,10 @@ S3_SECRET_KEY=your_secret_key
 
 ```bash
 # Run a simple search workflow
-python run_example_workflow.py
+uv run python run_example_workflow.py
 
 # Or use the CLI
-bad-agent collect run general_search
+uv run bad-agent collect run general_search
 ```
 
 This will:
@@ -185,15 +185,15 @@ The CLI provides commands for configuration and data collection:
 
 ```bash
 # Initialize configuration
-bad-agent configure init
+uv run bad-agent configure init
 
 # List available workflows
-bad-agent collect list-workflows
+uv run bad-agent collect list-workflows
 
 # Run a specific workflow
-bad-agent collect run general_search
-bad-agent collect run form_submission
-bad-agent collect run video_discovery
+uv run bad-agent collect run general_search
+uv run bad-agent collect run form_submission
+uv run bad-agent collect run video_discovery
 ```
 
 ### Configuration Options

@@ -61,7 +61,7 @@ class HTMLProcessor:
             MinificationError: If minify-html is not available or fails during minification.
         """
         if not MINIFY_HTML_AVAILABLE or not minify_html: 
-            msg = "minify-html library not installed or not imported. HTML minification is disabled. Install with `pip install minify-html`."
+            msg = "minify-html library not installed or not imported. HTML minification is disabled. Install with `uv add minify-html`."
             logger.error(msg, extra={**DEFAULT_LOG_EXTRA_HTML, "sub_action": "minify"})
             raise MinificationError(msg)
         if not isinstance(html_content, str):
